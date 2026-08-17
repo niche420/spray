@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(WIN32)
-    option(SPRAY_ENABLE_D3D12  "Build the Direct3D 12 backend"  ON)
+    option(SPRAY_ENABLE_D3D12  "Build the Direct3D 12 backend"  OFF)
     option(SPRAY_ENABLE_VULKAN "Build the Vulkan backend" ON)
 elseif(UNIX || APPLE)
     set(SPRAY_ENABLE_VULKAN ON CACHE BOOL "Vulkan is the only backend on Linux and Mac" FORCE)

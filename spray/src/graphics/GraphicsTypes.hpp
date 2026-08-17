@@ -65,6 +65,8 @@ enum class Format {
     BGRA8_UNorm,
     RGBA16_Float,
     RGBA32_Float,
+    RGB32_Float, // vertex positions/normals -- tightly packed vec3 attributes
+    RG32_Float,  // vertex UVs -- tightly packed vec2 attributes
     R32_Float,
     D32_Float,
     D24_UNorm_S8_UInt,
@@ -412,7 +414,7 @@ struct GraphicsPipelineDesc {
 struct BLASGeometryDesc {
     BufferHandle vertexBuffer;
     uint32_t vertexStride = 0;
-    Format vertexFormat = Format::RGBA32_Float; // typically RGB, but Format has no RGB32 entry yet -- extend when needed
+    Format vertexFormat = Format::RGB32_Float;
     uint32_t vertexCount = 0;
 
     BufferHandle indexBuffer;

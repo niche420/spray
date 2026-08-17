@@ -1,6 +1,7 @@
 #pragma once
 
-#include "graphics/Types.hpp"
+#include "graphics/GraphicsTypes.hpp"
+#include "graphics/HandlePool.hpp"
 
 #include <vulkan/vulkan.h>
 
@@ -18,47 +19,10 @@ namespace spray::graphics::vk {
         }                                                                                 \
     } while (0)
 
-// ----------------------------------------------------------------------------
-// Handle pool: backs every draw::Handle<Tag> with a slot array + generation
-// counter, so a stale handle (e.g. held across a backend switch, or used
-// after Destroy*) is detectable rather than silently indexing garbage.
-// ----------------------------------------------------------------------------
-template <typename HandleT, typename NativeT>
-class HandlePool {
-public:
-    HandleT Add(NativeT value) {
-        for (uint32_t i = 0; i < m_slots.size(); ++i) {
-            if (!m_slots[i].has_value()) {
-                m_slots[i] = std::move(value);
-                return HandleT{ i, m_generations[i] };
-            }
-        }
-        m_slots.push_back(std::move(value));
-        m_generations.push_back(1);
-        return HandleT{ static_cast<uint32_t>(m_slots.size() - 1), 1 };
-    }
-
-    void Remove(HandleT handle) {
-        if (!IsValid(handle)) return;
-        m_slots[handle.index].reset();
-        m_generations[handle.index]++;
-    }
-
-    bool IsValid(HandleT handle) const {
-        return handle.index < m_slots.size() &&
-               m_generations[handle.index] == handle.generation &&
-               m_slots[handle.index].has_value();
-    }
-
-    NativeT& Get(HandleT handle) {
-        if (!IsValid(handle)) throw std::runtime_error("Stale or invalid handle");
-        return *m_slots[handle.index];
-    }
-
-private:
-    std::vector<std::optional<NativeT>> m_slots;
-    std::vector<uint32_t> m_generations;
-};
+// HandlePool<HandleT, NativeT> lives in spray::graphics (see
+// graphics/HandlePool.hpp) and is used unqualified below -- ordinary
+// enclosing-namespace lookup from spray::graphics::vk finds it without a
+// `using` declaration.
 
 inline VkFormat ToVkFormat(Format format) {
     switch (format) {
@@ -66,6 +30,8 @@ inline VkFormat ToVkFormat(Format format) {
     case Format::BGRA8_UNorm:       return VK_FORMAT_B8G8R8A8_UNORM;
     case Format::RGBA16_Float:      return VK_FORMAT_R16G16B16A16_SFLOAT;
     case Format::RGBA32_Float:      return VK_FORMAT_R32G32B32A32_SFLOAT;
+    case Format::RGB32_Float:       return VK_FORMAT_R32G32B32_SFLOAT;
+    case Format::RG32_Float:        return VK_FORMAT_R32G32_SFLOAT;
     case Format::R32_Float:         return VK_FORMAT_R32_SFLOAT;
     case Format::D32_Float:         return VK_FORMAT_D32_SFLOAT;
     case Format::D24_UNorm_S8_UInt: return VK_FORMAT_D24_UNORM_S8_UINT;
@@ -198,4 +164,4 @@ inline uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeBit
     }
     throw std::runtime_error("No suitable Vulkan memory type found");
 }
-} // namespace ray::vk
+} // namespace spray::graphics::vk

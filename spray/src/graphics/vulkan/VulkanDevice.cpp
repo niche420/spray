@@ -9,19 +9,19 @@
 
 namespace spray::graphics::vk {
 namespace {
-    constexpr uint32_t kFramesInFlight = 2;
+constexpr uint32_t kFramesInFlight = 2;
 
-    // Extensions required for raster + dynamic rendering + sync2 + full RT.
-    const std::vector<const char*> kRequiredDeviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        VK_KHR_SPIRV_1_4_EXTENSION_NAME, // required by ray tracing pipeline on some drivers
-    };
+// Extensions required for raster + dynamic rendering + sync2 + full RT.
+const std::vector<const char*> kRequiredDeviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+    VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+    VK_KHR_SPIRV_1_4_EXTENSION_NAME, // required by ray tracing pipeline on some drivers
+};
 } // namespace
 
 VulkanDevice::VulkanDevice(VkInstance instance, VkPhysicalDevice physicalDevice)

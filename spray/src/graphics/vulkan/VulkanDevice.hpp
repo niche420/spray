@@ -1,7 +1,7 @@
 #pragma once
 
 #include "graphics/Device.hpp"
-#include "graphics/Types.hpp"
+#include "graphics/GraphicsTypes.hpp"
 
 #include "VulkanCommon.hpp"
 
@@ -141,6 +141,16 @@ public:
     NativePipeline& GetNativePipeline(PipelineHandle h) { return m_pipelines.Get(h); }
     NativeAccelStruct& GetNativeBLAS(BLASHandle h) { return m_blases.Get(h); }
     NativeAccelStruct& GetNativeTLAS(TLASHandle h) { return m_tlases.Get(h); }
+
+    // --- Native handle accessors, used only by ui::UIManager's ImGui
+    // Vulkan-backend init (ImGui_ImplVulkan_InitInfo needs raw Vulkan
+    // objects that IDevice deliberately doesn't expose to app/scene code).
+    // Not for use outside that one call site -- reach for IDevice's
+    // backend-agnostic API everywhere else.
+    VkInstance GetInstance() const { return m_instance; }
+    VkQueue GetQueue() const { return m_queue; }
+    uint32_t GetQueueFamilyIndex() const { return m_queueFamilyIndex; }
+    VkDescriptorPool GetDescriptorPool() const { return m_descriptorPool; }
  
     // Extension function pointers, loaded once and shared with VulkanCommandList.
     PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR_ = nullptr;

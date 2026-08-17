@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Types.hpp"
+#include "GraphicsTypes.hpp"
 
-class SDL_Window;
+struct SDL_Window;
 
 namespace spray::graphics {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Types.hpp"
+#include "GraphicsTypes.hpp"
 
 #include <memory>
 #include <optional>

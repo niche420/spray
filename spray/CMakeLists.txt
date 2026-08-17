@@ -3,18 +3,39 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/imgui)
 set(SRC
     src/App.cpp
     src/App.hpp
-    src/Components.hpp
     src/Main.cpp
-    src/Scene.hpp
+    src/Swapchain.cpp
+    src/Swapchain.hpp
     src/Window.hpp
     src/Window.cpp
+    src/event/Events.hpp
+    src/event/Input.cpp
+    src/event/Input.hpp
+    src/event/Layer.hpp
+    src/event/LayerStack.cpp
+    src/event/LayerStack.hpp
+    src/asset/AssetManager.cpp
+    src/asset/AssetManager.hpp
+    src/asset/AssetTypes.hpp
+    src/asset/GltfImporter.cpp
+    src/asset/GltfImporter.hpp
     src/graphics/CommandList.hpp
     src/graphics/Context.cpp
     src/graphics/Context.hpp
     src/graphics/Device.hpp
-    src/graphics/Types.hpp
-    src/ui/UI.cpp
-    src/ui/UI.hpp
+    src/graphics/GraphicsTypes.hpp
+    src/graphics/HandlePool.hpp
+    src/math/Geometry.hpp
+    src/scene/Components.hpp
+    src/scene/Scene.cpp
+    src/scene/Scene.hpp
+    src/scene/SceneLayer.cpp
+    src/scene/SceneLayer.hpp
+    src/scene/SceneRenderer.cpp
+    src/scene/SceneRenderer.hpp
+    src/ui/UIManager.cpp
+    src/ui/UIManager.hpp
+    src/ui/UIBackend.hpp
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
@@ -32,8 +53,10 @@ if(SPRAY_ENABLE_VULKAN)
         src/graphics/vulkan/VulkanContext.hpp
         src/graphics/vulkan/VulkanDevice.cpp
         src/graphics/vulkan/VulkanDevice.hpp
+        src/ui/VulkanUIBackend.cpp
+        src/ui/VulkanUIBackend.hpp
         ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
-        ${IMGUI_DIR}/backends/imgui_impl_vulkan.h)
+    )
 endif()
 if(SPRAY_ENABLE_D3D12)
     list(APPEND SRC
@@ -55,7 +78,7 @@ target_link_libraries(spray PRIVATE SDL3::SDL3 Vulkan::Vulkan)
 
 target_include_directories(spray PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/entt/single_entt
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/entt/single_include
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/glm
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/tinygltf
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb
