@@ -82,20 +82,18 @@ inline DXGI_FORMAT ToDxgiFormat(Format format) {
     }
 }
 
-// Unlike Vulkan (image layout transitions), D3D12 resource states also cover
-// buffers, but this API only calls TransitionTextures today -- kept scoped
-// to what ICommandList actually exposes.
 inline D3D12_RESOURCE_STATES ToD3D12ResourceState(ResourceState state) {
     switch (state) {
-        case ResourceState::Undefined:      return D3D12_RESOURCE_STATE_COMMON;
-        case ResourceState::RenderTarget:   return D3D12_RESOURCE_STATE_RENDER_TARGET;
-        case ResourceState::DepthWrite:     return D3D12_RESOURCE_STATE_DEPTH_WRITE;
-        case ResourceState::DepthRead:      return D3D12_RESOURCE_STATE_DEPTH_READ;
-        case ResourceState::ShaderReadOnly: return D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-                                                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        case ResourceState::CopySrc:        return D3D12_RESOURCE_STATE_COPY_SOURCE;
-        case ResourceState::CopyDst:        return D3D12_RESOURCE_STATE_COPY_DEST;
-        case ResourceState::Present:        return D3D12_RESOURCE_STATE_PRESENT;
+    case ResourceState::Undefined:      return D3D12_RESOURCE_STATE_COMMON;
+    case ResourceState::RenderTarget:   return D3D12_RESOURCE_STATE_RENDER_TARGET;
+    case ResourceState::DepthWrite:     return D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    case ResourceState::DepthRead:      return D3D12_RESOURCE_STATE_DEPTH_READ;
+    case ResourceState::ShaderReadOnly: return D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    case ResourceState::General:        return D3D12_RESOURCE_STATE_UNORDERED_ACCESS; // NEW
+    case ResourceState::CopySrc:        return D3D12_RESOURCE_STATE_COPY_SOURCE;
+    case ResourceState::CopyDst:        return D3D12_RESOURCE_STATE_COPY_DEST;
+    case ResourceState::Present:        return D3D12_RESOURCE_STATE_PRESENT;
     }
     return D3D12_RESOURCE_STATE_COMMON;
 }

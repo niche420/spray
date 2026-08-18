@@ -56,6 +56,7 @@ inline VkImageLayout ToVkImageLayout(ResourceState state) {
     case ResourceState::DepthWrite:     return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     case ResourceState::DepthRead:      return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     case ResourceState::ShaderReadOnly: return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    case ResourceState::General:        return VK_IMAGE_LAYOUT_GENERAL;
     case ResourceState::CopySrc:        return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     case ResourceState::CopyDst:        return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     case ResourceState::Present:        return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -82,6 +83,13 @@ inline void ToVkSync(ResourceState state, VkPipelineStageFlags2& stage, VkAccess
     case ResourceState::DepthRead:
         stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         access = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        return;
+    case ResourceState::General:
+        // NEW — covers imageLoad/imageStore from raygen/closest-hit; conservative (both
+        // ray tracing and compute stages, read+write) same simplification as elsewhere in
+        // this file per its header comment.
+        stage = VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        access = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
         return;
     case ResourceState::ShaderReadOnly:
         stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;

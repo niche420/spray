@@ -244,6 +244,7 @@ NativeTexture VulkanDevice::AllocateTexture(const TextureDesc& desc) {
     if (HasFlag(desc.usage, TextureUsage::RenderTarget)) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     if (HasFlag(desc.usage, TextureUsage::DepthStencil)) usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     if (HasFlag(desc.usage, TextureUsage::ShaderResource)) usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    if (HasFlag(desc.usage, TextureUsage::Storage)) usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     if (HasFlag(desc.usage, TextureUsage::CopySrc)) usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     if (HasFlag(desc.usage, TextureUsage::CopyDst)) usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
@@ -358,16 +359,17 @@ void VulkanDevice::DestroyShaderModule(ShaderModuleHandle handle) {
 // ============================================================================
 
 namespace {
-    VkDescriptorType ToVkDescriptorType(BindingType type) {
-        switch (type) {
-        case BindingType::UniformBuffer:          return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        case BindingType::StorageBuffer:          return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        case BindingType::SampledTexture:         return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        case BindingType::Sampler:                return VK_DESCRIPTOR_TYPE_SAMPLER;
-        case BindingType::AccelerationStructure:  return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-        }
-        return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+VkDescriptorType ToVkDescriptorType(BindingType type) {
+    switch (type) {
+    case BindingType::UniformBuffer:          return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    case BindingType::StorageBuffer:          return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    case BindingType::SampledTexture:         return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    case BindingType::StorageTexture:         return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; // NEW
+    case BindingType::Sampler:                return VK_DESCRIPTOR_TYPE_SAMPLER;
+    case BindingType::AccelerationStructure:  return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     }
+    return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+}
 } // namespace
 
 BindGroupLayoutHandle VulkanDevice::CreateBindGroupLayout(const BindGroupLayoutDesc& desc) {
@@ -451,6 +453,15 @@ BindGroupHandle VulkanDevice::CreateBindGroup(const BindGroupDesc& desc) {
             VkDescriptorImageInfo imgInfo{};
             imgInfo.imageView = tex.view;
             imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfos.push_back(imgInfo);
+            write.pImageInfo = &imageInfos.back();
+            break;
+        }
+        case BindingType::StorageTexture: {
+            NativeTexture& tex = m_textures.Get(entry.texture);
+            VkDescriptorImageInfo imgInfo{};
+            imgInfo.imageView = tex.view;
+            imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
             imageInfos.push_back(imgInfo);
             write.pImageInfo = &imageInfos.back();
             break;

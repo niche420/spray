@@ -106,6 +106,7 @@ enum class TextureUsage : uint32_t {
     ShaderResource = 1 << 2,
     CopySrc = 1 << 3,
     CopyDst = 1 << 4,
+    Storage = 1 << 5,
 };
 inline TextureUsage operator|(TextureUsage a, TextureUsage b) {
     return static_cast<TextureUsage>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
@@ -168,6 +169,7 @@ enum class ResourceState {
     DepthWrite,
     DepthRead,
     ShaderReadOnly,
+    General,
     CopySrc,
     CopyDst,
     Present,
@@ -249,6 +251,7 @@ enum class BindingType {
     UniformBuffer,
     StorageBuffer,
     SampledTexture,
+    StorageTexture,
     Sampler,
     AccelerationStructure,
 };

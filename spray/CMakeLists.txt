@@ -25,6 +25,8 @@ set(SRC
     src/graphics/Device.hpp
     src/graphics/GraphicsTypes.hpp
     src/graphics/HandlePool.hpp
+    src/graphics/Pathtracer.cpp
+    src/graphics/Pathtracer.hpp
     src/math/Geometry.hpp
     src/scene/Components.hpp
     src/scene/Scene.cpp

@@ -136,6 +136,7 @@ NativeTexture D3D12GraphicsDevice::AllocateTexture(const TextureDesc& desc) {
     D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
     if (HasFlag(desc.usage, TextureUsage::RenderTarget)) flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     if (HasFlag(desc.usage, TextureUsage::DepthStencil)) flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    if (HasFlag(desc.usage, TextureUsage::Storage)) flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
     D3D12_HEAP_PROPERTIES heapProps{};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -162,6 +163,11 @@ NativeTexture D3D12GraphicsDevice::AllocateTexture(const TextureDesc& desc) {
         clearValue.DepthStencil = { 1.0f, 0 };
         pClear = &clearValue;
         initialState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    }
+    if (HasFlag(desc.usage, TextureUsage::Storage) &&
+        !HasFlag(desc.usage, TextureUsage::RenderTarget) &&
+        !HasFlag(desc.usage, TextureUsage::DepthStencil)) {
+        initialState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     }
 
     HR_CHECK(m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &resDesc, initialState,
@@ -307,6 +313,14 @@ BindGroupHandle D3D12GraphicsDevice::CreateBindGroup(const BindGroupDesc& desc) 
                     srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
                     srv.Texture2D.MipLevels = 1;
                     m_device->CreateShaderResourceView(tex.resource.Get(), &srv, dst);
+                    break;
+                }
+                case BindingType::StorageTexture: {
+                    NativeTexture& tex = m_textures.Get(entry->texture);
+                    D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
+                    uav.Format = tex.format;
+                    uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+                    m_device->CreateUnorderedAccessView(tex.resource.Get(), nullptr, &uav, dst);
                     break;
                 }
                 case BindingType::AccelerationStructure: {
