@@ -106,3 +106,91 @@ source_group(
     PREFIX ""
     FILES ${SPRAY_SOURCES}
 )
+
+### Shaders ###
+
+set(SPRAY_SHADER_OUTPUT_DIR
+    ${CMAKE_CURRENT_BINARY_DIR}/shaders
+)
+
+set(SPRAY_SHADER_SOURCES)
+set(SPRAY_SHADER_OUTPUTS)
+
+if(SPRAY_ENABLE_VULKAN)
+    set(SPRAY_VULKAN_SHADER_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan
+    )
+    set(SPRAY_VULKAN_SHADERS
+        ${SPRAY_VULKAN_SHADER_DIR}/Capture.rgen
+        ${SPRAY_VULKAN_SHADER_DIR}/Capture.rmiss
+    )
+
+    foreach(SHADER ${SPRAY_VULKAN_SHADERS})
+        get_filename_component(SHADER_NAME ${SHADER} NAME)
+        set(OUTPUT
+            ${SPRAY_SHADER_OUTPUT_DIR}/vulkan/${SHADER_NAME}.spv
+        )
+
+        add_custom_command(
+            OUTPUT ${OUTPUT}
+            COMMAND ${CMAKE_COMMAND}
+                -E make_directory
+                ${SPRAY_SHADER_OUTPUT_DIR}/vulkan
+            COMMAND Vulkan::glslc
+                --target-env=vulkan1.3
+                -I${SPRAY_VULKAN_SHADER_DIR}
+                -O
+                ${SHADER}
+                -o ${OUTPUT}
+            DEPENDS ${SHADER}
+            COMMENT "Compiling Vulkan shader ${SHADER_NAME}"
+            VERBATIM
+        )
+
+        list(APPEND SPRAY_SHADER_SOURCES ${SHADER})
+        list(APPEND SPRAY_SHADER_OUTPUTS ${OUTPUT})
+    endforeach()
+endif()
+
+if(SPRAY_ENABLE_D3D12)
+    set(SPRAY_D3D12_SHADER_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12
+    )
+    set(SPRAY_D3D12_SHADERS
+        ${SPRAY_D3D12_SHADER_DIR}/Capture.rgen.glsl
+        ${SPRAY_D3D12_SHADER_DIR}/Mesh.hlsl
+    )
+
+    foreach(SHADER ${SPRAY_D3D12_SHADERS})
+        get_filename_component(SHADER_NAME ${SHADER} NAME)
+        set(OUTPUT
+            ${SPRAY_SHADER_OUTPUT_DIR}/d3d12/${SHADER_NAME}.dxil
+        )
+
+        add_custom_command(
+            OUTPUT ${OUTPUT}
+            COMMAND ${CMAKE_COMMAND}
+                -E make_directory
+                ${SPRAY_SHADER_OUTPUT_DIR}/d3d12
+            COMMAND dxc
+                -T lib_6_6
+                -I ${SPRAY_D3D12_SHADER_DIR}
+                -O3
+                -Fo ${OUTPUT}
+                ${SHADER}
+            DEPENDS ${SHADER}
+            COMMENT "Compiling D3D12 shader ${SHADER_NAME}"
+            VERBATIM
+        )
+
+        list(APPEND SPRAY_SHADER_SOURCES ${SHADER})
+        list(APPEND SPRAY_SHADER_OUTPUTS ${OUTPUT})
+    endforeach()
+endif()
+
+add_custom_target(spray_shaders
+    DEPENDS ${SPRAY_SHADER_OUTPUTS}
+    SOURCES ${SPRAY_SHADER_SOURCES}
+)
+
+add_dependencies(spray spray_shaders)

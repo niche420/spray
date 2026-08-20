@@ -1,7 +1,10 @@
 #include "pch.hpp"
 #include "Window.hpp"
 
-#include <SDL3/SDL_vulkan.h>
+#ifdef SPRAY_VULKAN_ENABLED
+    #include <SDL3/SDL_vulkan.h>
+#endif
+
 #include <imgui_impl_sdl3.h>
 
 #include <stdexcept>
@@ -15,9 +18,11 @@ Window::Window(uint32_t width, uint32_t height) {
         throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
     }
 
-    // TODO: runtime condition for Vulkan
-    m_pWnd = SDL_CreateWindow("spray", width, height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
-
+    SDL_WindowFlags wndFlags = SDL_WINDOW_RESIZABLE;
+#ifdef SPRAY_VULKAN_ENABLED
+    wndFlags |= SDL_WINDOW_VULKAN;
+#endif
+    m_pWnd = SDL_CreateWindow("spray", width, height, wndFlags);
     if (!m_pWnd) {
         throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
     }

@@ -7,7 +7,7 @@
 
 namespace spray::graphics {
 
-// Backs every Handle<Tag> (see Types.hpp) with a slot array + generation
+// Backs every Handle<Tag> (see GrapphicsTypes.hpp) with a slot array + generation
 // counter, so a stale handle (held across a backend switch, or used after
 // Destroy*/asset removal) is detectable rather than silently indexing
 // garbage.

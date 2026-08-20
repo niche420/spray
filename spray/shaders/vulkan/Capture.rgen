@@ -1,0 +1,56 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+// Capture.raygen.rgen
+//
+// Ray generation shader for PathTracer's dataset-capture pass (see
+// PathTracer.hpp's class comment). Reconstructs a world-space primary ray
+// per pixel from the camera's inverse-view/inverse-proj matrices and traces
+// it into the scene's TLAS. One sample per pixel, no bounces yet.
+//
+// Binding convention: layout(set = N, binding = M) where N is the index of
+// the bind group layout in RayTracingPipelineDesc::bindGroupLayouts (0 here
+// -- PathTracer only ever binds one set, see cmd.SetBindGroup(0, ...) in
+// PathTracer::Render) and M matches BindGroupLayoutEntry::binding in
+// PathTracer's constructor.
+
+layout(set = 0, binding = 0) uniform CameraUniforms {
+    mat4 invView; // camera's world transform (PathTracer::Render's camWorld.matrix)
+    mat4 invProj;
+} gCamera;
+
+layout(set = 0, binding = 1, rgba32f) uniform image2D gOutput;
+layout(set = 0, binding = 2) uniform accelerationStructureEXT gScene;
+
+layout(location = 0) rayPayloadEXT vec3 hitColor;
+
+void main()
+{
+    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+    vec2 ndc = (pixelCenter / vec2(gl_LaunchSizeEXT.xy)) * 2.0 - 1.0;
+    // Y flip to match this engine's raster convention (see
+    // VulkanCommandList::SetViewport's comment) so a capture's framing
+    // matches the raster viewport's.
+    ndc.y = -ndc.y;
+
+    vec4 viewSpaceTarget = gCamera.invProj * vec4(ndc, 1.0, 1.0);
+    viewSpaceTarget /= viewSpaceTarget.w;
+
+    vec3 rayOriginWorld = (gCamera.invView * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    vec3 rayTargetWorld = (gCamera.invView * vec4(viewSpaceTarget.xyz, 1.0)).xyz;
+    vec3 rayDirWorld = normalize(rayTargetWorld - rayOriginWorld);
+
+    hitColor = vec3(0.0);
+
+    traceRayEXT(gScene,               // acceleration structure
+                gl_RayFlagsOpaqueEXT, // ray flags
+                0xFF,                 // cull mask
+                0, 0, 0,               // sbt record offset, sbt record stride, miss index
+                rayOriginWorld,
+                0.001,                 // tMin
+                rayDirWorld,
+                10000.0,               // tMax
+                0);                    // payload location (matches rayPayloadEXT location above)
+
+    imageStore(gOutput, ivec2(gl_LaunchIDEXT.xy), vec4(hitColor, 1.0));
+}
