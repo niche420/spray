@@ -1,9 +1,10 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-// Capture.miss.rmiss -- runs once per ray that doesn't hit any geometry in
-// the TLAS. See Capture.raygen.rgen for the traceRayEXT call this responds
-// to and the shared payload's meaning.
+// Capture.rmiss -- runs once per ray that doesn't hit any geometry in the
+// TLAS. See Capture.rgen for the traceRayEXT call this responds to and the
+// shared payload's meaning. Compiled filename is "capture.miss.spv" (see
+// spray/CMakeLists.txt's spray_compile_glsl call).
 
 layout(location = 0) rayPayloadInEXT vec3 hitColor;
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.24)
 project(spray)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -19,7 +19,8 @@ if(NOT SPRAY_ENABLE_VULKAN AND NOT SPRAY_ENABLE_D3D12)
 endif()
 
 if(SPRAY_ENABLE_VULKAN)
-    find_package(Vulkan REQUIRED)
+    # Need the glslc compiler
+    find_package(Vulkan REQUIRED COMPONENTS glslc)
 endif()
 
 set(SDL_STATIC ON CACHE BOOL "" FORCE)

@@ -36,10 +36,13 @@ SceneLayer::SceneLayer(graphics::IDevice& device, graphics::Format colorFormat, 
     : Layer("Scene"), m_device(device), m_colorFormat(colorFormat), m_depthFormat(depthFormat) {}
 
 SceneLayer::~SceneLayer() {
-    // Order matters: SceneRenderer must release its GPU resources before
-    // AssetManager's GPU mesh cache is invalidated (both against the same
-    // still-alive m_device -- App guarantees WaitIdle before layers are
-    // torn down, see App::~App).
+    // Order matters: both renderers must release their GPU resources before
+    // AssetManager's GPU mesh/BLAS caches are invalidated (all three
+    // against the same still-alive m_device -- App guarantees WaitIdle
+    // before layers are torn down, see App::~App). Order between
+    // m_pPathTracer and m_pSceneRenderer themselves doesn't matter -- they
+    // don't reference each other, only Scene/AssetManager.
+    m_pPathTracer.reset();
     m_pSceneRenderer.reset();
     if (m_pAssets) m_pAssets->InvalidateGpuCache(m_device);
 }
@@ -48,6 +51,7 @@ void SceneLayer::OnAttach() {
     m_pAssets = std::make_unique<assets::AssetManager>();
     m_pScene = std::make_unique<Scene>();
     m_pSceneRenderer = std::make_unique<graphics::SceneRenderer>(m_device, *m_pAssets);
+    m_pPathTracer = std::make_unique<graphics::PathTracer>(m_device, *m_pAssets);
 
     // Placeholder camera until a real orbit/fly controller with mouse-look
     // exists (Input::ConsumeMouseDelta is there for it) -- WASD/QE
@@ -98,6 +102,20 @@ void SceneLayer::OnEvent(event::Event& e) {
 void SceneLayer::Render(graphics::ICommandList& cmd, float aspectRatio) {
     if (m_activeCamera == entt::null) return;
     m_pSceneRenderer->Render(cmd, *m_pScene, m_activeCamera, aspectRatio, m_colorFormat, m_depthFormat);
+}
+
+void SceneLayer::RenderPathTraced(graphics::ICommandList& cmd) {
+    if (m_activeCamera == entt::null) return;
+    // Output currently goes nowhere visible -- PathTracer writes into its
+    // own internal storage texture (see PathTracer::GetOutputTexture), and
+    // nothing samples/blits/displays it yet. Calling this every frame for
+    // now anyway: it's the simplest way to actually exercise the shader
+    // compile -> pipeline creation -> BLAS/TLAS build -> TraceRays path
+    // end to end and find out if any of it is broken, rather than leaving
+    // it uncalled until the display side exists too. Revisit once there's
+    // a render-mode switch (see class comment) so this doesn't run
+    // unconditionally forever.
+    m_pPathTracer->Render(cmd, *m_pScene, m_activeCamera);
 }
 
 void SceneLayer::OnImGuiRender() {

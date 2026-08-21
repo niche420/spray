@@ -1,7 +1,7 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-// Capture.raygen.rgen
+// Capture.rgen
 //
 // Ray generation shader for PathTracer's dataset-capture pass (see
 // PathTracer.hpp's class comment). Reconstructs a world-space primary ray
@@ -13,6 +13,10 @@
 // -- PathTracer only ever binds one set, see cmd.SetBindGroup(0, ...) in
 // PathTracer::Render) and M matches BindGroupLayoutEntry::binding in
 // PathTracer's constructor.
+//
+// Compiled filename is "capture.raygen.spv" (see spray/CMakeLists.txt's
+// spray_compile_glsl call) -- decoupled from this source file's name on
+// purpose, to match what PathTracer::EnsurePipeline hardcodes.
 
 layout(set = 0, binding = 0) uniform CameraUniforms {
     mat4 invView; // camera's world transform (PathTracer::Render's camWorld.matrix)

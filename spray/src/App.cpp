@@ -101,12 +101,22 @@ void App::RenderFrame() {
 	graphics::TextureHandle backBuffer = m_pSwapchain->AcquireNextTexture();
 	graphics::ICommandList* cmd = m_pDevice->BeginCommandList();
 
+	// PathTracer's Render (TraceRays + its own BLAS/TLAS builds) is
+	// recorded here, deliberately BEFORE the raster BeginRendering scope
+	// opens below -- TraceRays is not valid to record inside an active
+	// Vulkan dynamic-rendering scope, unlike an ordinary draw call, so this
+	// can't be folded into the raster pass the way UI rendering is. Its
+	// output isn't displayed anywhere yet (see SceneLayer::RenderPathTraced's
+	// comment) -- this call exists right now purely to exercise the whole
+	// pipeline end to end every frame.
+	m_pSceneLayer->RenderPathTraced(*cmd);
+
 	// NOTE: depth texture's "before" state is hardcoded to Undefined every
 	// frame, even though after frame 1 its real state is DepthWrite from
 	// the previous frame. No persistent per-resource state tracker exists
 	// in this engine (every call site manually specifies before/after) --
 	// transitioning from Undefined is safe here specifically because the
-	// depth attachment is cleared every frame regardless (clear=true below
+	// depth attachment is cleared every frframe regardless (clear=true below
 	// discards old contents anyway), but this pattern would be wrong for a
 	// resource whose contents need to persist across frames.
 	cmd->TransitionTextures({
