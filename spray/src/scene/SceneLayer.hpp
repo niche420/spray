@@ -63,12 +63,6 @@ public:
     Scene& GetScene() { return *m_pScene; }
 
 private:
-    // Shared by the content browser's "Load" button and the
-    // SceneLoadRequestedEvent handler -- the event path exists for future
-    // triggers that don't have a direct SceneLayer reference to call this
-    // on (a future drag-and-drop handler in Window/App, say); the button
-    // has direct access already, so it just calls this instead of
-    // round-tripping through the event system for no reason.
     void LoadScene(const std::string& path);
 
     void DrawOutlinerPanel();

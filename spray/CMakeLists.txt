@@ -233,3 +233,8 @@ add_custom_command(TARGET spray POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${SPRAY_SHADER_OUT_DIR} $<TARGET_FILE_DIR:spray>/shaders/compiled
 )
+
+add_custom_command(TARGET spray POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${PROJECT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:spray>/assets
+)

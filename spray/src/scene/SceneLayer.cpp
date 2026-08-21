@@ -62,7 +62,7 @@ void SceneLayer::OnAttach() {
     registry.emplace<Camera>(m_activeCamera).isPrimary = true;
     registry.get<Transform>(m_activeCamera).position = { 0.0f, 1.0f, 3.0f };
 
-    LoadScene("assets/startup/DamagedHelmet.glb"); // placeholder startup content, see LoadScene's comment
+    LoadScene(m_loadPathBuffer);
 }
 
 void SceneLayer::LoadScene(const std::string& path) {
