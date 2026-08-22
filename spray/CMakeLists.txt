@@ -1,4 +1,5 @@
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/imgui)
+set(SPIRV_REFLECT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/spirv-reflect)
 
 set(SRC
     src/App.cpp
@@ -27,6 +28,10 @@ set(SRC
     src/graphics/HandlePool.hpp
     src/graphics/Pathtracer.cpp
     src/graphics/Pathtracer.hpp
+    src/graphics/shader/Library.cpp
+    src/graphics/shader/Library.hpp
+    src/graphics/shader/Reflection.cpp
+    src/graphics/shader/Reflection.hpp
     src/math/Geometry.hpp
     src/scene/Components.hpp
     src/scene/Scene.cpp
@@ -43,6 +48,8 @@ set(SRC
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
     ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
+    ${SPIRV_REFLECT_DIR}/spirv_reflect.c
+    ${SPIRV_REFLECT_DIR}/spirv_reflect.h
 )
 
 # Add platform/backend-specific files
@@ -86,6 +93,7 @@ target_include_directories(spray PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
+    ${SPIRV_REFLECT_DIR}
 )
 
 target_precompile_headers(spray

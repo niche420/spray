@@ -12,30 +12,6 @@ namespace spray::graphics {
 
 namespace {
 
-// Same helper SceneRenderer::LoadCompiledShader uses -- duplicated rather
-// than shared for now since it's a 10-line file-read; pull into a common
-// ShaderLoading.hpp if a third renderer ends up needing it too.
-std::vector<uint8_t> ReadFileBytes(const std::string& path) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f) return {};
-    size_t size = static_cast<size_t>(f.tellg());
-    f.seekg(0);
-    std::vector<uint8_t> data(size);
-    f.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size));
-    return data;
-}
-
-ShaderBytecode LoadCompiledShader(const std::string& dxilPath, const std::string& spirvPath) {
-    ShaderBytecode bc;
-    bc.dxil = ReadFileBytes(dxilPath);
-    bc.spirv = ReadFileBytes(spirvPath);
-    if (bc.spirv.empty() && bc.dxil.empty()) {
-        throw std::runtime_error("PathTracer: no compiled shader found at '" + spirvPath +
-            "' or '" + dxilPath + "' -- did the shader build step run?");
-    }
-    return bc;
-}
-
 // Mirrors SceneRenderer's camera UBO layout convention (view-proj packed as
 // one matrix there); path tracing needs the inverses separately to
 // reconstruct a world-space ray per pixel in the raygen shader, so this is
@@ -94,23 +70,42 @@ void PathTracer::SetOutputSize(uint32_t width, uint32_t height) {
 void PathTracer::EnsurePipeline() {
     if (m_pipeline.IsValid()) return;
 
+    // entryPoint = "main" here, NOT "RayGenMain"/"MissMain"/"ClosestHitMain" --
+    // these bytecode blobs come from GLSL sources (shaders/vulkan/Capture.*),
+    // and GLSL always compiles its single required entry function to a
+    // SPIR-V OpEntryPoint literally named "main"; unlike HLSL-via-dxc, the
+    // function's actual name in the source (RayGenMain, etc.) is not
+    // preserved into the compiled module. Using the HLSL-style name here
+    // was the root cause of an earlier vkCreateRayTracingPipelinesKHR
+    // VK_ERROR_INITIALIZATION_FAILED -- pName pointed at an entry point
+    // that didn't exist in the SPIR-V module.
+    //
+    // NOTE for whoever wires up the D3D12 HLSL versions of these shaders
+    // (shaders/d3d12/Capture.*.hlsl, currently unbuilt -- see
+    // spray/CMakeLists.txt): those DO use RayGenMain/MissMain/
+    // ClosestHitMain as real function names, since dxc preserves custom
+    // entry names into both DXIL and SPIR-V. ShaderModuleDesc only has one
+    // shared entryPoint field for both bytecode variants, so "main" is
+    // wrong for that path -- this'll need a per-backend entry point (or
+    // renaming those HLSL functions to main() too) before D3D12 ray
+    // tracing actually gets enabled.
     ShaderModuleDesc raygenDesc;
     raygenDesc.stage = ShaderStage::RayGen;
-    raygenDesc.entryPoint = "RayGenMain";
+    raygenDesc.entryPoint = "main";
     raygenDesc.bytecode = LoadCompiledShader("shaders/compiled/capture.raygen.dxil",
                                               "shaders/compiled/capture.raygen.spv");
     ShaderModuleHandle raygen = m_device.CreateShaderModule(raygenDesc);
 
     ShaderModuleDesc missDesc;
     missDesc.stage = ShaderStage::Miss;
-    missDesc.entryPoint = "MissMain";
+    missDesc.entryPoint = "main";
     missDesc.bytecode = LoadCompiledShader("shaders/compiled/capture.miss.dxil",
                                             "shaders/compiled/capture.miss.spv");
     ShaderModuleHandle miss = m_device.CreateShaderModule(missDesc);
 
     ShaderModuleDesc chitDesc;
     chitDesc.stage = ShaderStage::ClosestHit;
-    chitDesc.entryPoint = "ClosestHitMain";
+    chitDesc.entryPoint = "main";
     chitDesc.bytecode = LoadCompiledShader("shaders/compiled/capture.chit.dxil",
                                             "shaders/compiled/capture.chit.spv");
     ShaderModuleHandle chit = m_device.CreateShaderModule(chitDesc);

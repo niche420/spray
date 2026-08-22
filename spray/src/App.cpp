@@ -40,8 +40,7 @@ App::App() {
 	m_pSceneLayer = sceneLayer.get();
 	m_layerStack.PushLayer(std::move(sceneLayer));
 
-	m_pUI = std::make_unique<ui::UIManager>(m_pWnd->GetSDLWindow(), *m_pDevice, m_pSwapchain->GetColorFormat(),
-		/*swapchainImageCount=*/2);
+	m_pUI = std::make_unique<ui::UIManager>(*m_pWnd, *m_pDevice, *m_pSwapchain);
 }
 
 App::~App() {

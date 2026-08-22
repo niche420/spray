@@ -13,6 +13,7 @@ Swapchain::Swapchain(Window& window, graphics::IDevice& device) : m_device(devic
     scDesc.width = size.x;
     scDesc.height = size.y;
     scDesc.format = m_colorFormat;
+    scDesc.bufferCount = m_bufferCount;
     m_swapchain = m_device.CreateSwapchain(scDesc);
 
     CreateDepthTexture(size.x, size.y);

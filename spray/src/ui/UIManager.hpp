@@ -6,10 +6,14 @@
 #include <memory>
 
 struct ImGuiContext;
-struct SDL_Window;
+
+namespace spray {
+class Swapchain;
+class Window;
+}
 
 namespace spray::graphics {
-    class IDevice;
+class IDevice;
 }
 
 namespace spray::ui {
@@ -21,8 +25,7 @@ class UIManager {
 public:
     // Throws if `device`'s backend has no UIBackend implementation yet
     // (currently: anything but Vulkan -- see UIManager.cpp).
-    UIManager(SDL_Window* wnd, graphics::IDevice& device, graphics::Format swapchainColorFormat,
-        uint32_t swapchainImageCount);
+    UIManager(Window& wnd, graphics::IDevice& device, Swapchain& swapchain);
     ~UIManager();
 
     void BeginFrame();
@@ -36,7 +39,6 @@ public:
 
 private:
     ImGuiContext* m_ctx;
-    SDL_Window* m_sdlWindow;
     std::unique_ptr<UIBackend> m_backend;
 };
 

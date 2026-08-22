@@ -12,8 +12,7 @@ class Window;
 // Owns a swapchain plus its paired depth buffer -- recreated together on
 // resize, since both must always match the window's current size, which
 // is the whole reason to bundle them into one object rather than two
-// separately-managed resources. Doesn't own Window or IDevice, just reads
-// the window's current size at construction and whenever Resize is called.
+// separately-managed resources.
 class Swapchain {
 public:
     Swapchain(Window& window, graphics::IDevice& device);
@@ -36,6 +35,7 @@ public:
     graphics::TextureHandle GetDepthTexture() const { return m_depthTexture; }
     graphics::Format GetColorFormat() const { return m_colorFormat; }
     graphics::Format GetDepthFormat() const { return m_depthFormat; }
+    uint32_t GetBufferCount() const { return m_bufferCount; }
 
 private:
     void CreateDepthTexture(uint32_t width, uint32_t height);
@@ -46,6 +46,7 @@ private:
     graphics::TextureHandle m_depthTexture;
     graphics::Format m_colorFormat = graphics::Format::BGRA8_UNorm;
     graphics::Format m_depthFormat = graphics::Format::D32_Float;
+    uint32_t m_bufferCount = 2;
 };
 
 } // namespace spray

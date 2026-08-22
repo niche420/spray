@@ -1,5 +1,9 @@
 #include "pch.hpp"
 #include "UIManager.hpp"
+
+#include "Swapchain.hpp"
+#include "Window.hpp"
+
 #include "graphics/Device.hpp"
 
 #include <imgui.h>
@@ -15,27 +19,22 @@ namespace spray::ui {
 // backend-specific header. Mirrors how graphics::IContext::Create
 // dispatches to CreateVulkanContext()/CreateD3D12Context() the same way in
 // Context.cpp, without Context.cpp itself depending on either backend.
-std::unique_ptr<UIBackend> CreateVulkanUIBackend(graphics::IDevice& device, graphics::Format swapchainColorFormat,
-    uint32_t swapchainImageCount);
+std::unique_ptr<UIBackend> CreateVulkanUIBackend(graphics::IDevice& device, Swapchain& swapchain);
 
-UIManager::UIManager(SDL_Window* wnd, graphics::IDevice& device, graphics::Format swapchainColorFormat,
-    uint32_t swapchainImageCount)
-    : m_ctx(nullptr), m_sdlWindow(wnd) {
+UIManager::UIManager(Window& wnd, graphics::IDevice& device, Swapchain& swapchain)
+    : m_ctx(nullptr) {
+    IMGUI_CHECKVERSION();
     m_ctx = ImGui::CreateContext();
     if (!m_ctx) {
         throw std::runtime_error("Failed to create ImGui context");
     }
     ImGui::StyleColorsDark();
 
-    // Backend-agnostic on purpose -- InitForOther exists precisely for
-    // custom-renderer setups like this one, where ImGui's SDL3 backend
-    // only needs window/input glue and has no reason to know or care which
-    // graphics API is actually drawing the result.
-    ImGui_ImplSDL3_InitForOther(wnd);
+    ImGui_ImplSDL3_InitForOther(wnd.GetSDLWindow());
 
     switch (device.GetBackendType()) {
     case graphics::BackendType::Vulkan:
-        m_backend = CreateVulkanUIBackend(device, swapchainColorFormat, swapchainImageCount);
+        m_backend = CreateVulkanUIBackend(device, swapchain);
         break;
     case graphics::BackendType::D3D12:
         // No D3D12UIBackend yet -- matches the D3D12 graphics backend

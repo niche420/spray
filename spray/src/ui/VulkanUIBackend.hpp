@@ -5,28 +5,27 @@
 
 #include <vulkan/vulkan.h>
 
-namespace spray::graphics {
-    class ICommandList;
+namespace spray {
+class Swapchain;
 }
 
-namespace spray::graphics::vk {
-class VulkanDevice;
+namespace spray::graphics {
+class ICommandList;
 
-class VulkanUIBackend final : public ui::UIBackend {
+namespace vk {
+class VulkanDevice;
+}
+}
+
+namespace spray::ui::vk {
+
+class VulkanUIBackend final : public UIBackend {
 public:
-    VulkanUIBackend(VulkanDevice& device, Format swapchainColorFormat, uint32_t swapchainImageCount);
+    VulkanUIBackend(graphics::vk::VulkanDevice& device, Swapchain& swapchain);
     ~VulkanUIBackend() override;
 
     void BeginFrame() override;
     void Render(graphics::ICommandList& cmd) override;
-
-private:
-    // Assumes dynamic rendering (VK_KHR_dynamic_rendering), matching how
-    // SceneRenderer's own pipelines are built -- no VkRenderPass anywhere
-    // in this engine, so ImGui's Vulkan backend is configured the same
-    // way via UseDynamicRendering/PipelineRenderingCreateInfo rather than
-    // a render-pass handle.
-    VkFormat m_colorFormat;
 };
 
-} // namespace spray::graphics::vk
+} // namespace spray::ui::vk

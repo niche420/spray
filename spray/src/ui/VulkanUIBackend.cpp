@@ -1,5 +1,8 @@
 #include "pch.hpp"
 #include "VulkanUIBackend.hpp"
+
+#include "Swapchain.hpp"
+
 #include "graphics/vulkan/VulkanDevice.hpp"
 #include "graphics/vulkan/VulkanCommandList.hpp"
 #include "graphics/vulkan/VulkanCommon.hpp"
@@ -9,24 +12,33 @@
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
-namespace spray::graphics::vk {
+namespace spray::ui::vk {
 
-VulkanUIBackend::VulkanUIBackend(VulkanDevice& device, Format swapchainColorFormat, uint32_t swapchainImageCount)
-    : m_colorFormat(ToVkFormat(swapchainColorFormat)) {
-
+VulkanUIBackend::VulkanUIBackend(graphics::vk::VulkanDevice& device, Swapchain& swapchain)
+{
     ImGui_ImplVulkan_InitInfo initInfo{};
     initInfo.Instance = device.GetInstance();
     initInfo.PhysicalDevice = device.GetPhysicalDevice();
     initInfo.Device = device.GetDevice();
     initInfo.QueueFamily = device.GetQueueFamilyIndex();
     initInfo.Queue = device.GetQueue();
+    initInfo.PipelineInfoMain.RenderPass = nullptr;
+    initInfo.PipelineInfoMain.Subpass = 0;
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+    const VkFormat colorFormat = graphics::vk::ToVkFormat(swapchain.GetColorFormat());
+    const VkFormat depthFormat = graphics::vk::ToVkFormat(swapchain.GetDepthFormat());
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
     // Reuses VulkanDevice's own descriptor pool (created with
     // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT and a
     // COMBINED_IMAGE_SAMPLER allowance -- see VulkanDevice.cpp) rather than
     // creating a second pool just for ImGui's font atlas descriptor.
     initInfo.DescriptorPool = device.GetDescriptorPool();
     initInfo.MinImageCount = 2;
-    initInfo.ImageCount = swapchainImageCount;
+    initInfo.ImageCount = swapchain.GetBufferCount();
     initInfo.UseDynamicRendering = true;
 
     ImGui_ImplVulkan_Init(&initInfo);
@@ -41,22 +53,15 @@ void VulkanUIBackend::BeginFrame() {
 }
 
 void VulkanUIBackend::Render(graphics::ICommandList& cmd) {
-    auto& vkCmd = static_cast<VulkanCommandList&>(cmd);
+    auto& vkCmd = static_cast<graphics::vk::VulkanCommandList&>(cmd);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vkCmd.GetCommandBuffer());
 }
 
-} // namespace spray::graphics::vk
+} // namespace spray::ui::vk
 
 namespace spray::ui {
-
-    // Definition of the factory UIManager.cpp declares and calls -- lives here
-    // (rather than in UIManager.cpp) specifically so UIManager.cpp never needs
-    // to include VulkanDevice.hpp or vulkan.h. Same split as graphics::
-    // CreateVulkanContext() living in VulkanContext.cpp rather than Context.cpp.
-    std::unique_ptr<UIBackend> CreateVulkanUIBackend(graphics::IDevice& device, graphics::Format swapchainColorFormat,
-        uint32_t swapchainImageCount) {
-        auto& vkDevice = static_cast<graphics::vk::VulkanDevice&>(device);
-        return std::make_unique<graphics::vk::VulkanUIBackend>(vkDevice, swapchainColorFormat, swapchainImageCount);
-    }
-
+std::unique_ptr<UIBackend> CreateVulkanUIBackend(graphics::IDevice& device, Swapchain& swapchain) {
+    auto& vkDevice = static_cast<graphics::vk::VulkanDevice&>(device);
+    return std::make_unique<vk::VulkanUIBackend>(vkDevice, swapchain);
+}
 } // namespace spray::ui
