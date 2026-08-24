@@ -29,6 +29,7 @@ UIManager::UIManager(Window& wnd, graphics::IDevice& device, Swapchain& swapchai
         throw std::runtime_error("Failed to create ImGui context");
     }
     ImGui::StyleColorsDark();
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     ImGui_ImplSDL3_InitForOther(wnd.GetSDLWindow());
 
@@ -56,6 +57,7 @@ void UIManager::BeginFrame() {
     m_backend->BeginFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+    ImGui::DockSpaceOverViewport();
 }
 
 void UIManager::EndFrame() {

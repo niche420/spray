@@ -1,6 +1,6 @@
 // mesh.hlsl
 //
-// Minimal mesh shader for SceneRenderer. Register/space convention: binding
+// Minimal mesh shader for Rasterizer. Register/space convention: binding
 // -> register number, bind-group-layout index -> register space, matching
 // D3D12GraphicsDevice::BuildRootSignature's comment and mirrored on the
 // Vulkan side by descriptor set index == bind group layout index.
@@ -36,7 +36,7 @@ VSOutput VSMain(VSInput input)
     o.clipPosition = mul(gViewProj, worldPos);
     // NOTE: uses the model matrix's upper 3x3 directly rather than its
     // inverse-transpose -- correct only under uniform scale. Known
-    // simplification (see App/SceneRenderer notes); fix by uploading a
+    // simplification (see App/Rasterizer notes); fix by uploading a
     // second, inverse-transpose matrix in ObjectUniforms once non-uniform
     // scale actually shows up in imported content.
     o.worldNormal = mul((float3x3) gModel, input.normal);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Reflection.hpp"
+#include "ShaderReflection.hpp"
 #include "graphics/GraphicsTypes.hpp"
 #include "graphics/Device.hpp"
 
@@ -17,7 +17,7 @@ namespace spray::graphics::shaders {
 // shaders/compiled/capture.raygen.spv/.dxil -- see spray/CMakeLists.txt).
 //
 // Replaces two things that used to be duplicated by hand in both
-// SceneRenderer.cpp and Pathtracer.cpp:
+// Rasterizer.cpp and Pathtracer.cpp:
 //   1. The ReadFileBytes/LoadCompiledShader file-loading helper.
 //   2. Hand-typed ShaderModuleDesc::entryPoint strings and
 //      BindGroupLayoutDesc entries authored next to each pipeline's
@@ -48,12 +48,15 @@ public:
     };
 
     // Loads (or returns the already-cached) shader module for `stem`
-    // against `device` -- e.g. Load("capture.raygen", device). Reads
-    // shaders/compiled/<stem>.spv (required -- see class comment) and
-    // shaders/compiled/<stem>.dxil (optional, loaded and stored but not
-    // reflected). Cache is keyed by stem only, not by device -- callers
-    // must InvalidateGpuCache() before loading against a different device
-    // (e.g. after a backend switch), same as AssetManager's GPU cache.
+    // against `device` -- e.g. Load("capture.raygen", device). Requires a
+    // Vulkan device: reads shaders/compiled/<stem>.spv and reflects it.
+    // Throws immediately for a non-Vulkan device rather than reading a
+    // .dxil file it has no use for -- DXIL reflection isn't implemented
+    // (see class comment), so there's genuinely nothing this can do on a
+    // D3D12 device yet. Cache is keyed by stem only, not by device --
+    // callers must InvalidateGpuCache() before loading against a different
+    // device (e.g. after a backend switch), same as AssetManager's GPU
+    // cache.
     const LoadedShader& Load(const std::string& stem, IDevice& device);
 
     // Merges the descriptor bindings of every already-Load()ed shader in

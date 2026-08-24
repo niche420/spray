@@ -6,6 +6,7 @@
 #include "graphics/Context.hpp"
 #include "graphics/Device.hpp"
 #include "graphics/CommandList.hpp"
+#include "graphics/Presenter.hpp"
 #include "scene/SceneLayer.hpp"
 #include "ui/UIManager.hpp"
 
@@ -35,10 +36,19 @@ App::App() {
 	m_pDevice = m_pCtx->CreateDevice(*adapterIndex);
 	m_pSwapchain = std::make_unique<Swapchain>(*m_pWnd, *m_pDevice);
 
-	auto sceneLayer = std::make_unique<SceneLayer>(*m_pDevice, m_pSwapchain->GetColorFormat(),
-		m_pSwapchain->GetDepthFormat());
+	// No longer takes color/depth format -- SceneLayer's viewports each own
+	// their own offscreen textures with fixed formats now, independent of
+	// whatever the swapchain happens to use (see Rasterizer's class
+	// comment on why that coupling went away).
+	auto sceneLayer = std::make_unique<SceneLayer>(*m_pDevice);
 	m_pSceneLayer = sceneLayer.get();
 	m_layerStack.PushLayer(std::move(sceneLayer));
+
+	// Constructed after SceneLayer -- needs its ShaderLibrary (shared
+	// cache; Presenter's blit shader loads through the same instance
+	// Rasterizer/PathTracer already use, rather than owning a second one).
+	m_pPresenter = std::make_unique<graphics::Presenter>(*m_pDevice, m_pSceneLayer->GetShaderLibrary(),
+		m_pSwapchain->GetColorFormat());
 
 	m_pUI = std::make_unique<ui::UIManager>(*m_pWnd, *m_pDevice, *m_pSwapchain);
 }
@@ -46,8 +56,8 @@ App::App() {
 App::~App() {
 	if (m_pDevice) {
 		m_pDevice->WaitIdle(); // GPU work must be done before anything below tears down
-		// m_layerStack, m_pUI, m_pSwapchain are all declared after
-		// m_pDevice in App.hpp, so ordinary reverse-declaration-order
+		// m_pPresenter, m_layerStack, m_pUI, m_pSwapchain are all declared
+		// after m_pDevice in App.hpp, so ordinary reverse-declaration-order
 		// destruction already tears them down (in that order) before
 		// m_pDevice -- nothing else needed here.
 	}
@@ -100,47 +110,46 @@ void App::RenderFrame() {
 	graphics::TextureHandle backBuffer = m_pSwapchain->AcquireNextTexture();
 	graphics::ICommandList* cmd = m_pDevice->BeginCommandList();
 
-	// PathTracer's Render (TraceRays + its own BLAS/TLAS builds) is
-	// recorded here, deliberately BEFORE the raster BeginRendering scope
-	// opens below -- TraceRays is not valid to record inside an active
-	// Vulkan dynamic-rendering scope, unlike an ordinary draw call, so this
-	// can't be folded into the raster pass the way UI rendering is. Its
-	// output isn't displayed anywhere yet (see SceneLayer::RenderPathTraced's
-	// comment) -- this call exists right now purely to exercise the whole
-	// pipeline end to end every frame.
-	m_pSceneLayer->RenderPathTraced(*cmd);
+	auto size = m_pWnd->GetSize();
 
-	// NOTE: depth texture's "before" state is hardcoded to Undefined every
-	// frame, even though after frame 1 its real state is DepthWrite from
-	// the previous frame. No persistent per-resource state tracker exists
-	// in this engine (every call site manually specifies before/after) --
-	// transitioning from Undefined is safe here specifically because the
-	// depth attachment is cleared every frframe regardless (clear=true below
-	// discards old contents anyway), but this pattern would be wrong for a
-	// resource whose contents need to persist across frames.
+	// Whichever viewport is active (Rasterized/PathTraced -- see
+	// graphics/Viewport.hpp) renders here, deliberately BEFORE the
+	// swapchain's own BeginRendering scope opens below. Every IViewport
+	// implementation manages its own render-target scope (or, for
+	// PathTracer, deliberately no scope at all -- TraceRays can't be
+	// recorded inside an active Vulkan dynamic-rendering scope) rather
+	// than sharing the swapchain's, so none of them can be nested inside
+	// this call's own BeginRendering either. This single call replaces
+	// what used to be two separately-timed calls (SceneLayer::Render for
+	// raster, RenderPathTraced for the path tracer) -- now uniform across
+	// both, and will stay uniform once a splat viewer exists too.
+	m_pSceneLayer->RenderActiveViewport(*cmd, size.x, size.y);
+
 	cmd->TransitionTextures({
 		{ backBuffer, graphics::ResourceState::Undefined, graphics::ResourceState::RenderTarget },
-		{ m_pSwapchain->GetDepthTexture(), graphics::ResourceState::Undefined, graphics::ResourceState::DepthWrite },
 		});
 
 	graphics::ColorAttachment colorAttachment;
 	colorAttachment.texture = backBuffer;
-	colorAttachment.clear = true;
-	colorAttachment.clearColor[0] = 0.05f;
-	colorAttachment.clearColor[1] = 0.05f;
-	colorAttachment.clearColor[2] = 0.08f;
-	colorAttachment.clearColor[3] = 1.0f;
+	// No clear needed -- Presenter::Blit below unconditionally overwrites
+	// every pixel (it's a fullscreen triangle), so clearing first would
+	// just be discarded work. (If ImGui panels are later made to draw
+	// directly over unblitted regions -- e.g. a viewport that doesn't fill
+	// the whole window -- revisit this.)
+	colorAttachment.clear = false;
 
+	// No depth attachment -- neither the blit pass nor ImGui do any depth
+	// testing, and the swapchain's own depth texture isn't used by
+	// anything in this scope anymore (Rasterizer owns its own now).
 	graphics::DepthAttachment depthAttachment;
-	depthAttachment.texture = m_pSwapchain->GetDepthTexture();
-	depthAttachment.clear = true;
-	depthAttachment.clearDepth = 1.0f;
 
 	cmd->BeginRendering({ colorAttachment }, depthAttachment);
 
-	auto size = m_pWnd->GetSize();
-	float aspect = size.y > 0 ? static_cast<float>(size.x) / static_cast<float>(size.y) : 1.0f;
-	m_pSceneLayer->Render(*cmd, aspect);
+	graphics::TextureHandle activeOutput = m_pSceneLayer->GetActiveColorOutput();
+	if (activeOutput.IsValid()) {
+		m_pPresenter->Blit(*cmd, activeOutput, size.x, size.y);
+	}
+
 	m_pUI->Render(*cmd);
 
 	cmd->EndRendering();

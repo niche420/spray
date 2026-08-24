@@ -3,6 +3,8 @@
 #include "graphics/GraphicsTypes.hpp"
 #include "graphics/Device.hpp"
 #include "graphics/CommandList.hpp"
+#include "graphics/shaders/ShaderLibrary.hpp"
+#include "graphics/Viewport.hpp"
 #include "scene/Scene.hpp"
 #include "asset/AssetManager.hpp"
 
@@ -18,24 +20,42 @@ namespace spray::graphics {
 // which are cached per-mesh in AssetManager and only built once) since
 // object transforms can change frame to frame.
 //
-// Deliberately a separate class from SceneRenderer rather than folded into
-// it -- see SceneLayer's class comment on why "which renderer draws it" is
-// kept separate from scene simulation. SceneRenderer stays the raster
-// viewport path; this is the offline/capture path. Both read the same
-// Scene + AssetManager, neither owns the other.
-class PathTracer {
+// Deliberately a separate class from Rasterizer rather than folded into
+// it -- "which renderer draws it" is kept separate from scene simulation.
+// Rasterizer stays the fast/approximate interactive viewport path; this is
+// the ground-truth path (used both for live interactive viewing AND, later,
+// driven repeatedly by a CaptureRig for offline dataset capture -- those are
+// two different callers of the same underlying renderer, not two different
+// renderers). Both Rasterizer and PathTracer read the same Scene +
+// AssetManager, neither owns the other.
+// Shader loading and bind-group-layout authorship go through ShaderLibrary
+// now (shared with Rasterizer, owned by SceneLayer) instead of a
+// hand-duplicated file-loading helper and hand-typed entryPoint/
+// BindGroupLayoutDesc values -- see ShaderLibrary's class comment for why
+// (this class specifically is what surfaced the bug that motivated it: a
+// hand-typed entryPoint value silently stopped matching the compiled
+// shader when the Vulkan-side shaders moved from HLSL to GLSL).
+class PathTracer final : public IViewport {
 public:
-    PathTracer(IDevice& device, assets::AssetManager& assets);
-    ~PathTracer();
+    PathTracer(IDevice& device, assets::AssetManager& assets, shaders::ShaderLibrary& shaderLibrary);
+    ~PathTracer() override;
 
     PathTracer(const PathTracer&) = delete;
     PathTracer& operator=(const PathTracer&) = delete;
 
+    ViewportMode GetMode() const override { return ViewportMode::PathTraced; }
+
     // Width/height of the output texture; recreated if the requested size
     // differs from what's currently allocated. Call before Render if you
-    // need a specific capture resolution (defaults to 512x512 on first
-    // use).
-    void SetOutputSize(uint32_t width, uint32_t height);
+    // need a specific resolution -- when driven as the interactive
+    // viewport this tracks the viewport panel's size (same as Rasterizer);
+    // when driven later by a CaptureRig for offline capture, the rig will
+    // call this with the dataset's target resolution instead, temporarily
+    // overriding whatever the interactive viewport had set (capture and
+    // live viewing can't run at once anyway, since both go through this
+    // same PathTracer instance -- see the class comment). Defaults to
+    // 512x512 on first use.
+    void SetOutputSize(uint32_t width, uint32_t height) override;
 
     // Builds/rebuilds the TLAS from the scene's current MeshRenderer +
     // WorldTransform state, records any BLAS builds AssetManager reports as
@@ -49,9 +69,9 @@ public:
     // them -- see TLASBuildDesc's comment on this ordering requirement in
     // general (it matters across command lists/submissions too, which this
     // single-list recording sidesteps for the common case).
-    void Render(ICommandList& cmd, Scene& scene, entt::entity cameraEntity);
+    void Render(ICommandList& cmd, Scene& scene, entt::entity cameraEntity) override;
 
-    TextureHandle GetOutputTexture() const { return m_outputTexture; }
+    TextureHandle GetColorOutput() const override { return m_outputTexture; }
     uint32_t GetOutputWidth() const { return m_width; }
     uint32_t GetOutputHeight() const { return m_height; }
 
@@ -62,6 +82,7 @@ private:
 
     IDevice& m_device;
     assets::AssetManager& m_assets;
+    shaders::ShaderLibrary& m_shaders;
 
     PipelineHandle m_pipeline;            // ray tracing pipeline
     BindGroupLayoutHandle m_sceneLayout;  // set 0: camera UBO + output image + TLAS

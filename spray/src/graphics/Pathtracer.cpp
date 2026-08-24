@@ -5,17 +5,16 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cstring>
-#include <fstream>
 #include <stdexcept>
 
 namespace spray::graphics {
 
 namespace {
 
-// Mirrors SceneRenderer's camera UBO layout convention (view-proj packed as
+// Mirrors Rasterizer's camera UBO layout convention (view-proj packed as
 // one matrix there); path tracing needs the inverses separately to
 // reconstruct a world-space ray per pixel in the raygen shader, so this is
-// its own layout rather than reusing SceneRenderer's.
+// its own layout rather than reusing Rasterizer's.
 struct CameraUniforms {
     glm::mat4 invView;
     glm::mat4 invProj;
@@ -23,16 +22,27 @@ struct CameraUniforms {
 
 } // namespace
 
-PathTracer::PathTracer(IDevice& device, assets::AssetManager& assets)
-    : m_device(device), m_assets(assets) {
+PathTracer::PathTracer(IDevice& device, assets::AssetManager& assets, shaders::ShaderLibrary& shaderLibrary)
+    : m_device(device), m_assets(assets), m_shaders(shaderLibrary) {
 
-    BindGroupLayoutDesc layoutDesc;
-    layoutDesc.entries = {
-        { 0, BindingType::UniformBuffer,         ShaderStage::RayGen },
-        { 1, BindingType::StorageTexture,        ShaderStage::RayGen },
-        { 2, BindingType::AccelerationStructure, ShaderStage::RayGen },
-    };
-    m_sceneLayout = m_device.CreateBindGroupLayout(layoutDesc);
+    // Loaded eagerly (not lazily in EnsurePipeline as before) for the same
+    // reason as Rasterizer's constructor: the bind group layout below
+    // needs these shaders' reflected bindings, and that layout is needed
+    // now, before EnsurePipeline ever runs (deferred until first Render,
+    // unlike Rasterizer it doesn't even wait on a format -- see
+    // EnsurePipeline's own comment -- but keeping shader loading in the
+    // constructor for both renderers keeps the pattern consistent).
+    m_shaders.Load("capture.raygen", m_device);
+    m_shaders.Load("capture.miss", m_device);
+    m_shaders.Load("capture.chit", m_device);
+
+    // Set/binding indices come straight from Capture.rgen/rmiss/rchit's
+    // layout(set=0, binding=N) declarations via reflection -- this is
+    // exactly the BindGroupLayoutDesc that used to be hand-typed here (and
+    // exactly the kind of hand-typed value that drifted out of sync with
+    // the shader source once -- see ShaderLibrary's class comment).
+    m_sceneLayout = m_device.CreateBindGroupLayout(
+        m_shaders.DeriveBindGroupLayout({ "capture.raygen", "capture.miss", "capture.chit" }, 0));
 
     BufferDesc camBufDesc;
     camBufDesc.sizeBytes = sizeof(CameraUniforms);
@@ -44,12 +54,12 @@ PathTracer::PathTracer(IDevice& device, assets::AssetManager& assets)
     // m_sceneBindGroup deliberately NOT created here -- it references
     // m_outputTexture and m_tlas, neither of which exist yet. Built lazily
     // in Render once both are valid (see EnsureOutputTexture/RebuildTlas),
-    // same "create on first use" pattern SceneRenderer uses for its
+    // same "create on first use" pattern Rasterizer uses for its
     // pipeline via EnsurePipeline.
 }
 
 PathTracer::~PathTracer() {
-    // Same lifetime contract as SceneRenderer: caller destroys this before
+    // Same lifetime contract as Rasterizer: caller destroys this before
     // IDevice (m_device is a plain reference).
     m_device.UnmapBuffer(m_cameraUniformBuffer);
     m_device.DestroyBuffer(m_cameraUniformBuffer);
@@ -70,48 +80,26 @@ void PathTracer::SetOutputSize(uint32_t width, uint32_t height) {
 void PathTracer::EnsurePipeline() {
     if (m_pipeline.IsValid()) return;
 
-    // entryPoint = "main" here, NOT "RayGenMain"/"MissMain"/"ClosestHitMain" --
-    // these bytecode blobs come from GLSL sources (shaders/vulkan/Capture.*),
-    // and GLSL always compiles its single required entry function to a
-    // SPIR-V OpEntryPoint literally named "main"; unlike HLSL-via-dxc, the
-    // function's actual name in the source (RayGenMain, etc.) is not
-    // preserved into the compiled module. Using the HLSL-style name here
-    // was the root cause of an earlier vkCreateRayTracingPipelinesKHR
-    // VK_ERROR_INITIALIZATION_FAILED -- pName pointed at an entry point
-    // that didn't exist in the SPIR-V module.
-    //
-    // NOTE for whoever wires up the D3D12 HLSL versions of these shaders
-    // (shaders/d3d12/Capture.*.hlsl, currently unbuilt -- see
-    // spray/CMakeLists.txt): those DO use RayGenMain/MissMain/
-    // ClosestHitMain as real function names, since dxc preserves custom
-    // entry names into both DXIL and SPIR-V. ShaderModuleDesc only has one
-    // shared entryPoint field for both bytecode variants, so "main" is
-    // wrong for that path -- this'll need a per-backend entry point (or
-    // renaming those HLSL functions to main() too) before D3D12 ray
-    // tracing actually gets enabled.
-    ShaderModuleDesc raygenDesc;
-    raygenDesc.stage = ShaderStage::RayGen;
-    raygenDesc.entryPoint = "main";
-    raygenDesc.bytecode = LoadCompiledShader("shaders/compiled/capture.raygen.dxil",
-                                              "shaders/compiled/capture.raygen.spv");
-    ShaderModuleHandle raygen = m_device.CreateShaderModule(raygenDesc);
-
-    ShaderModuleDesc missDesc;
-    missDesc.stage = ShaderStage::Miss;
-    missDesc.entryPoint = "main";
-    missDesc.bytecode = LoadCompiledShader("shaders/compiled/capture.miss.dxil",
-                                            "shaders/compiled/capture.miss.spv");
-    ShaderModuleHandle miss = m_device.CreateShaderModule(missDesc);
-
-    ShaderModuleDesc chitDesc;
-    chitDesc.stage = ShaderStage::ClosestHit;
-    chitDesc.entryPoint = "main";
-    chitDesc.bytecode = LoadCompiledShader("shaders/compiled/capture.chit.dxil",
-                                            "shaders/compiled/capture.chit.spv");
-    ShaderModuleHandle chit = m_device.CreateShaderModule(chitDesc);
+    // Already loaded in the constructor -- entry points come from
+    // reflection now (see ShaderLibrary::Load), not a hand-typed string.
+    // This is exactly the fix for the entryPoint bug that used to live
+    // here: these shaders compile from GLSL (shaders/vulkan/Capture.*),
+    // and GLSL always compiles its one required entry function to a
+    // SPIR-V OpEntryPoint literally named "main" -- unlike HLSL-via-dxc,
+    // which preserves whatever name you compiled with. A hand-typed
+    // "RayGenMain"/"MissMain"/"ClosestHitMain" here (left over from when
+    // these shaders were HLSL) silently pointed at an entry point that no
+    // longer existed in the compiled module once the source moved to
+    // GLSL, and vkCreateRayTracingPipelinesKHR failed with
+    // VK_ERROR_INITIALIZATION_FAILED as a result. Reflection reads the
+    // real entry point out of the module directly, so this can't drift
+    // out of sync again.
+    const auto& raygen = m_shaders.Load("capture.raygen", m_device);
+    const auto& miss = m_shaders.Load("capture.miss", m_device);
+    const auto& chit = m_shaders.Load("capture.chit", m_device);
 
     RayTracingPipelineDesc desc;
-    desc.shaderModules = { raygen, miss, chit };
+    desc.shaderModules = { raygen.handle, miss.handle, chit.handle };
     desc.shaderGroups = {
         { ShaderGroupType::General, /*generalShaderIndex=*/0 },                          // raygen
         { ShaderGroupType::General, /*generalShaderIndex=*/1 },                          // miss
@@ -122,9 +110,9 @@ void PathTracer::EnsurePipeline() {
 
     m_pipeline = m_device.CreateRayTracingPipeline(desc);
 
-    m_device.DestroyShaderModule(raygen);
-    m_device.DestroyShaderModule(miss);
-    m_device.DestroyShaderModule(chit);
+    // No DestroyShaderModule calls here -- ShaderLibrary (shared, owned by
+    // SceneLayer) owns shader module lifetime now; see its
+    // InvalidateGpuCache.
 }
 
 void PathTracer::EnsureOutputTexture() {
@@ -160,11 +148,11 @@ void PathTracer::RebuildTlas(ICommandList& cmd, Scene& scene) {
 
         // Ensure the raster GPU mesh exists first -- GetOrCreateGpuBlas
         // requires it (see AssetManager's comment on why it doesn't create
-        // one implicitly). SceneRenderer already does this for entities it
+        // one implicitly). Rasterizer already does this for entities it
         // draws, but PathTracer may run on a mesh the raster path hasn't
         // touched yet this session.
         auto& gpuMesh = m_assets.GetOrCreateGpuMesh(meshRenderer.mesh, m_device);
-        if (gpuMesh.indexCount == 0) continue; // same skip SceneRenderer applies
+        if (gpuMesh.indexCount == 0) continue; // same skip Rasterizer applies
 
         BLASHandle blas = m_assets.GetOrCreateGpuBlas(meshRenderer.mesh, m_device);
         if (m_assets.NeedsBlasBuild(meshRenderer.mesh)) {
@@ -211,6 +199,8 @@ void PathTracer::RebuildTlas(ICommandList& cmd, Scene& scene) {
 }
 
 void PathTracer::Render(ICommandList& cmd, Scene& scene, entt::entity cameraEntity) {
+    if (cameraEntity == entt::null) return;
+
     EnsurePipeline();
     EnsureOutputTexture();
     RebuildTlas(cmd, scene);
@@ -242,6 +232,13 @@ void PathTracer::Render(ICommandList& cmd, Scene& scene, entt::entity cameraEnti
     camUniforms.invProj = glm::inverse(proj);
     std::memcpy(m_cameraMapped, &camUniforms, sizeof(CameraUniforms));
 
+    // "before = Undefined" every frame even though after frame 1 the real
+    // prior state is ShaderReadOnly (this function's own tail transition,
+    // below) -- same simplification Rasterizer::Render and App::
+    // RenderFrame's swapchain-depth comment both use: the whole image gets
+    // overwritten by TraceRays regardless (every pixel imageStore'd), so a
+    // stale "before" state is harmless here. No persistent per-resource
+    // state tracker exists in this engine yet.
     cmd.TransitionTextures({
         { m_outputTexture, ResourceState::Undefined, ResourceState::General }
     });
@@ -249,6 +246,14 @@ void PathTracer::Render(ICommandList& cmd, Scene& scene, entt::entity cameraEnti
     cmd.SetPipeline(m_pipeline);
     cmd.SetBindGroup(0, m_sceneBindGroup);
     cmd.TraceRays(m_width, m_height, 1);
+
+    // Left in ShaderReadOnly so Presenter::Blit (or an ImGui::Image, if
+    // that replaces Presenter later) can sample this directly -- matches
+    // Rasterizer's tail transition, both satisfying IViewport::
+    // GetColorOutput's documented contract.
+    cmd.TransitionTextures({
+        { m_outputTexture, ResourceState::General, ResourceState::ShaderReadOnly },
+    });
 }
 
 } // namespace spray::graphics

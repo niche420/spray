@@ -1,5 +1,4 @@
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/imgui)
-set(SPIRV_REFLECT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/spirv-reflect)
 
 set(SRC
     src/App.cpp
@@ -28,18 +27,21 @@ set(SRC
     src/graphics/HandlePool.hpp
     src/graphics/Pathtracer.cpp
     src/graphics/Pathtracer.hpp
-    src/graphics/shader/Library.cpp
-    src/graphics/shader/Library.hpp
-    src/graphics/shader/Reflection.cpp
-    src/graphics/shader/Reflection.hpp
+    src/graphics/Presenter.cpp
+    src/graphics/Presenter.hpp
+    src/graphics/Rasterizer.cpp
+    src/graphics/Rasterizer.hpp
+    src/graphics/Viewport.hpp
+    src/graphics/shaders/ShaderLibrary.cpp
+    src/graphics/shaders/ShaderLibrary.hpp
+    src/graphics/shaders/ShaderReflection.cpp
+    src/graphics/shaders/ShaderReflection.hpp
     src/math/Geometry.hpp
     src/scene/Components.hpp
     src/scene/Scene.cpp
     src/scene/Scene.hpp
     src/scene/SceneLayer.cpp
     src/scene/SceneLayer.hpp
-    src/scene/SceneRenderer.cpp
-    src/scene/SceneRenderer.hpp
     src/ui/UIManager.cpp
     src/ui/UIManager.hpp
     src/ui/UIBackend.hpp
@@ -48,8 +50,8 @@ set(SRC
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
     ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
-    ${SPIRV_REFLECT_DIR}/spirv_reflect.c
-    ${SPIRV_REFLECT_DIR}/spirv_reflect.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/spirv-reflect/spirv_reflect.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/spirv-reflect/spirv_reflect.h
 )
 
 # Add platform/backend-specific files
@@ -91,14 +93,14 @@ target_include_directories(spray PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/glm
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/tinygltf
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/spirv-reflect
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
-    ${SPIRV_REFLECT_DIR}
 )
 
 target_precompile_headers(spray
     PRIVATE
-        src/pch.hpp
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/pch.hpp>"
 )
 
 if(SPRAY_ENABLE_VULKAN)
@@ -229,6 +231,12 @@ endfunction()
 
 spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Mesh.hlsl VSMain vs_6_0 mesh.vs)
 spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Mesh.hlsl PSMain ps_6_0 mesh.ps)
+
+# Presenter's fullscreen blit pass -- HLSL like Mesh.hlsl (needs to run on
+# both backends, and there's no GLSL-vs-HLSL benefit to a shader this
+# trivial the way there was for the ray tracing extension shaders below).
+spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Blit.hlsl VSMain vs_6_0 blit.vs)
+spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Blit.hlsl PSMain ps_6_0 blit.ps)
 
 spray_compile_glsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan/Capture.rgen  capture.raygen)
 spray_compile_glsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/vulkan/Capture.rmiss capture.miss)

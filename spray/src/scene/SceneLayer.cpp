@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <functional>
 #include <iostream>
+#include <stdexcept>
 #include <type_traits>
 
 namespace spray {
@@ -32,26 +33,30 @@ namespace {
     }
 } // namespace
 
-SceneLayer::SceneLayer(graphics::IDevice& device, graphics::Format colorFormat, graphics::Format depthFormat)
-    : Layer("Scene"), m_device(device), m_colorFormat(colorFormat), m_depthFormat(depthFormat) {}
+SceneLayer::SceneLayer(graphics::IDevice& device)
+    : Layer("Scene"), m_device(device) {}
 
 SceneLayer::~SceneLayer() {
-    // Order matters: both renderers must release their GPU resources before
-    // AssetManager's GPU mesh/BLAS caches are invalidated (all three
+    // Order matters: viewports must release their GPU resources before
+    // ShaderLibrary's and AssetManager's GPU caches are invalidated (all
     // against the same still-alive m_device -- App guarantees WaitIdle
     // before layers are torn down, see App::~App). Order between
-    // m_pPathTracer and m_pSceneRenderer themselves doesn't matter -- they
-    // don't reference each other, only Scene/AssetManager.
+    // m_pPathTracer and m_pRasterizer themselves doesn't matter -- they
+    // don't reference each other, only Scene/AssetManager/ShaderLibrary.
+    // Order between ShaderLibrary and AssetManager invalidation doesn't
+    // matter either -- independent caches.
     m_pPathTracer.reset();
-    m_pSceneRenderer.reset();
+    m_pRasterizer.reset();
+    if (m_pShaderLibrary) m_pShaderLibrary->InvalidateGpuCache(m_device);
     if (m_pAssets) m_pAssets->InvalidateGpuCache(m_device);
 }
 
 void SceneLayer::OnAttach() {
     m_pAssets = std::make_unique<assets::AssetManager>();
     m_pScene = std::make_unique<Scene>();
-    m_pSceneRenderer = std::make_unique<graphics::SceneRenderer>(m_device, *m_pAssets);
-    m_pPathTracer = std::make_unique<graphics::PathTracer>(m_device, *m_pAssets);
+    m_pShaderLibrary = std::make_unique<graphics::shaders::ShaderLibrary>();
+    m_pRasterizer = std::make_unique<graphics::Rasterizer>(m_device, *m_pAssets, *m_pShaderLibrary);
+    m_pPathTracer = std::make_unique<graphics::PathTracer>(m_device, *m_pAssets, *m_pShaderLibrary);
 
     // Placeholder camera until a real orbit/fly controller with mouse-look
     // exists (Input::ConsumeMouseDelta is there for it) -- WASD/QE
@@ -99,29 +104,67 @@ void SceneLayer::OnEvent(event::Event& e) {
         });
 }
 
-void SceneLayer::Render(graphics::ICommandList& cmd, float aspectRatio) {
-    if (m_activeCamera == entt::null) return;
-    m_pSceneRenderer->Render(cmd, *m_pScene, m_activeCamera, aspectRatio, m_colorFormat, m_depthFormat);
+graphics::IViewport& SceneLayer::GetActiveViewport() {
+    switch (m_activeMode) {
+        case graphics::ViewportMode::Rasterized: return *m_pRasterizer;
+        case graphics::ViewportMode::PathTraced: return *m_pPathTracer;
+        case graphics::ViewportMode::Splat:
+            // No SplatViewer exists yet -- see Viewport.hpp's comment on
+            // why the enum value exists ahead of any implementation.
+            // Falling through to Rasterized rather than crashing: DrawView
+            // portModePanel below doesn't currently offer Splat as a
+            // selectable option for exactly this reason, so reaching this
+            // would mean m_activeMode was set some other way (a bug worth
+            // surfacing loudly rather than silently rendering the wrong
+            // thing).
+            throw std::runtime_error("SceneLayer: ViewportMode::Splat has no implementation yet");
+    }
+    throw std::runtime_error("SceneLayer: unhandled ViewportMode");
 }
 
-void SceneLayer::RenderPathTraced(graphics::ICommandList& cmd) {
+void SceneLayer::RenderActiveViewport(graphics::ICommandList& cmd, uint32_t width, uint32_t height) {
     if (m_activeCamera == entt::null) return;
-    // Output currently goes nowhere visible -- PathTracer writes into its
-    // own internal storage texture (see PathTracer::GetOutputTexture), and
-    // nothing samples/blits/displays it yet. Calling this every frame for
-    // now anyway: it's the simplest way to actually exercise the shader
-    // compile -> pipeline creation -> BLAS/TLAS build -> TraceRays path
-    // end to end and find out if any of it is broken, rather than leaving
-    // it uncalled until the display side exists too. Revisit once there's
-    // a render-mode switch (see class comment) so this doesn't run
-    // unconditionally forever.
-    m_pPathTracer->Render(cmd, *m_pScene, m_activeCamera);
+    graphics::IViewport& viewport = GetActiveViewport();
+    viewport.SetOutputSize(width, height);
+    viewport.Render(cmd, *m_pScene, m_activeCamera);
+}
+
+graphics::TextureHandle SceneLayer::GetActiveColorOutput() const {
+    switch (m_activeMode) {
+        case graphics::ViewportMode::Rasterized: return m_pRasterizer->GetColorOutput();
+        case graphics::ViewportMode::PathTraced: return m_pPathTracer->GetColorOutput();
+        case graphics::ViewportMode::Splat: return {};
+    }
+    return {};
 }
 
 void SceneLayer::OnImGuiRender() {
+    DrawViewportModePanel();
     DrawOutlinerPanel();
     DrawInspectorPanel();
     DrawContentBrowserPanel();
+}
+
+void SceneLayer::DrawViewportModePanel() {
+    ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(220, 90), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Viewport");
+
+    // Splat deliberately omitted -- no implementation yet, see
+    // GetActiveViewport's comment. Add it here once SplatViewer exists.
+    static const char* kModeNames[] = { "Rasterized", "Path Traced" };
+    int modeIndex = static_cast<int>(m_activeMode);
+    if (ImGui::Combo("Mode", &modeIndex, kModeNames, 2)) {
+        m_activeMode = static_cast<graphics::ViewportMode>(modeIndex);
+    }
+
+    if (m_activeMode == graphics::ViewportMode::PathTraced) {
+        ImGui::TextDisabled("Ground truth -- slower, no bounce lighting yet");
+    } else {
+        ImGui::TextDisabled("Fast preview -- not representative of a capture");
+    }
+
+    ImGui::End();
 }
 
 void SceneLayer::DrawOutlinerPanel() {
@@ -223,7 +266,7 @@ void SceneLayer::DrawInspectorPanel() {
             ImGui::TextDisabled("No mesh assigned");
         }
         // Material property editing (base color, texture) isn't wired up
-        // yet -- SceneRenderer doesn't bind material data to the shader at
+        // yet -- Rasterizer doesn't bind material data to the shader at
         // all currently (mesh.hlsl is a placeholder headlight lambert), so
         // there's nothing an edit here could actually affect.
         ImGui::TextDisabled(mesh->material.IsValid() ? "Material assigned (unused by the shader yet)"
@@ -253,10 +296,10 @@ void SceneLayer::DrawContentBrowserPanel() {
         ImGui::TextDisabled("%s", m_pScene->sourcePath.string().c_str());
     }
 
-    // NOTE: captured datasets and training jobs (see the earlier
-    // content-browser design sketch) aren't real things yet -- no capture
-    // pipeline or training-job bridge exists in the engine. This panel
-    // currently only exercises "load a scene".
+    // NOTE: captured datasets and training jobs will get their own Layer
+    // (see the project's architecture discussion -- a "CaptureLayer"
+    // sibling to this one) rather than living here. This panel currently
+    // only exercises "load a scene".
     ImGui::Separator();
     ImGui::InputText("glTF path", m_loadPathBuffer, sizeof(m_loadPathBuffer));
     ImGui::SameLine();

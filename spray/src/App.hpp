@@ -10,6 +10,7 @@
 namespace spray::graphics {
 	class IContext;
 	class IDevice;
+	class Presenter;
 }
 namespace spray::ui {
 	class UIManager;
@@ -48,13 +49,17 @@ private:
 	// before the device itself goes away.
 	std::unique_ptr<Swapchain> m_pSwapchain;
 	std::unique_ptr<ui::UIManager> m_pUI;
+	// Blits whichever viewport SceneLayer says is active onto the
+	// swapchain -- see Presenter's class comment. Constructed after
+	// m_pSceneLayer since it needs that layer's ShaderLibrary.
+	std::unique_ptr<graphics::Presenter> m_pPresenter;
 
 	event::LayerStack m_layerStack;
 	// Non-owning -- owned by m_layerStack (pushed in App::App). Kept
-	// separately because RenderFrame needs to call SceneLayer::Render
-	// directly inside its BeginRendering/EndRendering scope, which isn't
-	// something the generic Layer interface exposes (see SceneLayer::
-	// Render's comment on why).
+	// separately because RenderFrame needs to call SceneLayer::
+	// RenderActiveViewport directly, outside the swapchain's
+	// BeginRendering scope, which isn't something the generic Layer
+	// interface exposes.
 	SceneLayer* m_pSceneLayer = nullptr;
 
 	// Naive per-frame sync: wait on the previous frame's fence before

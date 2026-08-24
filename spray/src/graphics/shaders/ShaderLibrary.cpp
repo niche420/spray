@@ -1,5 +1,5 @@
 #include "pch.hpp"
-#include "Library.hpp"
+#include "ShaderLibrary.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -25,18 +25,29 @@ const ShaderLibrary::LoadedShader& ShaderLibrary::Load(const std::string& stem, 
     auto it = m_cache.find(stem);
     if (it != m_cache.end()) return it->second;
 
+    if (device.GetBackendType() != BackendType::Vulkan) {
+        // DXIL reflection isn't implemented (see class comment) -- there's
+        // nothing ShaderLibrary can do for a D3D12 device yet. The old
+        // duplicated LoadCompiledShader helpers this replaced used to load
+        // both .spv and .dxil unconditionally "just in case"; that's
+        // pointless here specifically, since nothing on this path can
+        // derive an entry point or bind group layout from DXIL -- failing
+        // loudly now is more honest than reading a file that goes nowhere.
+        throw std::runtime_error("ShaderLibrary: '" + stem + "' -- only Vulkan devices are "
+                                  "supported right now (DXIL reflection isn't implemented yet; "
+                                  "see class comment)");
+    }
+
     ShaderBytecode bytecode;
     bytecode.spirv = ReadFileBytes("shaders/compiled/" + stem + ".spv");
-    bytecode.dxil = ReadFileBytes("shaders/compiled/" + stem + ".dxil");
-
     if (bytecode.spirv.empty()) {
-        // See class comment -- DXIL-only reflection isn't implemented, so
-        // this is a hard requirement right now, not just "prefer SPIR-V".
         throw std::runtime_error("ShaderLibrary: no SPIR-V found for '" + stem + "' at "
                                   "shaders/compiled/" + stem + ".spv -- did the shader build step "
-                                  "run? (DXIL-only shaders aren't reflectable yet, see ShaderLibrary's "
-                                  "class comment)");
+                                  "run?");
     }
+    // bytecode.dxil intentionally left empty -- nothing on this path reads
+    // it (see the backend check above), so there's no reason to read that
+    // file too.
 
     ReflectedModule reflection = ReflectSpirv(bytecode.spirv);
 
