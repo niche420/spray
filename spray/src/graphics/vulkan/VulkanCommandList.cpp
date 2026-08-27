@@ -337,6 +337,27 @@ void VulkanCommandList::BuildTLAS(TLASHandle handle, const TLASBuildDesc& desc) 
     VkAccelerationStructureBuildRangeInfoKHR range{ instanceCount, 0, 0, 0 };
     const VkAccelerationStructureBuildRangeInfoKHR* pRange = &range;
     m_device->vkCmdBuildAccelerationStructuresKHR_(m_cmdBuffer, 1, &buildInfo, &pRange);
+
+    // Without this, nothing enforces that the TLAS build above has actually
+    // finished writing before a later command in this same command buffer
+    // (PathTracer::Render's TraceRays, recorded right after BuildTLAS
+    // returns -- see RebuildTlas's caller) reads the TLAS through a bound
+    // AccelerationStructure descriptor. Recording order is not execution
+    // order: the ACCELERATION_STRUCTURE_BUILD and RAY_TRACING_SHADER
+    // pipeline stages can run out of order on the GPU without an explicit
+    // dependency between them, which is exactly the kind of race that
+    // shows up as an intermittent/flickering black frame rather than a
+    // deterministic failure -- some frames the build happens to finish in
+    // time relative to the shader stage, some it doesn't.
+    VkMemoryBarrier2 readBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER_2 };
+    readBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+    readBarrier.srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+    readBarrier.dstStageMask = VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+    readBarrier.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+    VkDependencyInfo readDepInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+    readDepInfo.memoryBarrierCount = 1;
+    readDepInfo.pMemoryBarriers = &readBarrier;
+    vkCmdPipelineBarrier2(m_cmdBuffer, &readDepInfo);
 }
 
 void VulkanCommandList::TraceRays(uint32_t width, uint32_t height, uint32_t depth) {

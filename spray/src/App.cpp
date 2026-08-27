@@ -113,24 +113,8 @@ void App::OnEvent(event::Event& e) {
 	m_layerStack.OnEvent(e);
 }
 
-void App::RenderFrame() {
-	if (m_previousFrameFence) m_pDevice->WaitForFence(*m_previousFrameFence);
-
+void App::RenderFrame(graphics::ICommandList* cmd) {
 	graphics::TextureHandle backBuffer = m_pSwapchain->AcquireNextTexture();
-	graphics::ICommandList* cmd = m_pDevice->BeginCommandList();
-
-	// Render the active viewport at whatever size the "Viewport" ImGui
-	// panel last reported (see SceneLayer::DrawViewportPanel) -- the
-	// viewport is now a normal dockable panel displaying an ImGui::Image,
-	// not a fullscreen blit, so it's sized to the panel, not the window.
-	// Deliberately BEFORE the swapchain's own BeginRendering scope opens
-	// below, same reasoning as before: every IViewport implementation
-	// manages its own render-target scope (or, for PathTracer,
-	// deliberately none at all -- TraceRays can't be recorded inside an
-	// active Vulkan dynamic-rendering scope), so none of them can be
-	// nested inside this call's own BeginRendering either.
-	auto viewportSize = m_pSceneLayer->GetViewportPanelSize();
-	m_pSceneLayer->RenderActiveViewport(*cmd, viewportSize.x, viewportSize.y);
 
 	cmd->TransitionTextures({
 		{ backBuffer, graphics::ResourceState::Undefined, graphics::ResourceState::RenderTarget },
@@ -177,17 +161,38 @@ int32_t App::Run() {
 
 		m_pWnd->PollEvents(); // dispatches into App::OnEvent -> Input + ImGui capture check + LayerStack
 
-		// BeginFrame/EndFrame bracket the whole update+UI pass, not just
-		// OnImGuiRender -- NewFrame must run before any ImGui:: call this
-		// frame (including any a layer's OnUpdate might make), and
-		// ImGui::Render() must run after every layer's OnImGuiRender has
-		// finished issuing widget calls.
+		// Wait for the PREVIOUS frame's GPU work to finish before anything
+		// below touches GPU resources.
+		if (m_previousFrameFence) m_pDevice->WaitForFence(*m_previousFrameFence);
+
 		m_pUI->BeginFrame();
 		m_layerStack.OnUpdate(dt);
+
+		// Render the active viewport BEFORE OnImGuiRender runs. This is the
+		// critical ordering fix: SceneLayer::DrawViewportPanel (called from
+		// OnImGuiRender) reads the active viewport's CURRENT color texture
+		// and hands it to UIManager::GetTextureID, which may destroy/
+		// replace a cached ImGui descriptor set if the texture handle
+		// changed since last frame. RenderActiveViewport is what can
+		// actually resize/destroy/recreate that texture (Rasterizer::
+		// EnsureOutputTextures, when the viewport panel's reported size
+		// changes). With the old ordering (viewport render happening
+		// later, inside RenderFrame), a same-frame resize could destroy
+		// the exact VkImageView an ImGui draw command had already been
+		// queued against a few lines earlier in OnImGuiRender -- a
+		// same-frame GPU use-after-free, not just a one-frame-stale
+		// display. Rendering the viewport first means any resize/recreate
+		// is already settled by the time DrawViewportPanel reads the
+		// handle, so what ImGui queues this frame is guaranteed to still
+		// be valid when m_pUI->Render actually records against it below.
+		graphics::ICommandList* cmd = m_pDevice->BeginCommandList();
+		auto viewportSize = m_pSceneLayer->GetViewportPanelSize();
+		m_pSceneLayer->RenderActiveViewport(*cmd, viewportSize.x, viewportSize.y);
+
 		m_layerStack.OnImGuiRender();
 		m_pUI->EndFrame();
 
-		RenderFrame();
+		RenderFrame(cmd);
 	}
 
 	return 0;

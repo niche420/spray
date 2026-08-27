@@ -10,6 +10,7 @@
 namespace spray::graphics {
 	class IContext;
 	class IDevice;
+	class ICommandList;
 }
 namespace spray::ui {
 	class UIManager;
@@ -29,7 +30,13 @@ public:
 
 private:
 	void HandleResize(uint32_t width, uint32_t height);
-	void RenderFrame();
+
+	// Finishes a frame already opened by Run() -- acquires the swapchain
+	// image, blits/renders ImGui into it, submits, presents. `cmd` was
+	// obtained earlier in Run() (before OnImGuiRender), and already has
+	// the active viewport's render recorded into it -- see Run()'s comment
+	// on why that ordering matters.
+	void RenderFrame(graphics::ICommandList* cmd);
 
 	// Window's event callback target. Order: Input (unconditionally, see
 	// Input's class comment) -> ImGui's want-capture check (blocks mouse/

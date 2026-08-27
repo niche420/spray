@@ -35,11 +35,14 @@ VulkanDevice::VulkanDevice(VkInstance instance, VkPhysicalDevice physicalDevice)
     VK_CHECK(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool));
 
     // Fixed-size pool sized for a modest app; grow (or pool-per-frame-with-reset)
-    // if you hit VK_ERROR_OUT_OF_POOL_MEMORY under heavier descriptor usage.
+    // if hit VK_ERROR_OUT_OF_POOL_MEMORY under heavier descriptor usage.
     std::vector<VkDescriptorPoolSize> poolSizes = {
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 256 },
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 256 },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 256 },
+        { VK_DESCRIPTOR_TYPE_SAMPLER, 64 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 64 },
         { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 64 },
     };
     VkDescriptorPoolCreateInfo descPoolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
@@ -189,6 +192,16 @@ BufferHandle VulkanDevice::CreateBuffer(const BufferDesc& desc) {
     bool needsDeviceAddress = HasFlag(desc.usage, BufferUsage::VertexBuffer) ||
         HasFlag(desc.usage, BufferUsage::IndexBuffer) ||
         HasFlag(desc.usage, BufferUsage::StorageBuffer);
+
+    // Same set of buffers (vertex/index/storage) may be handed to
+    // vkCmdBuildAccelerationStructuresKHR as BLAS geometry input (see
+    // AssetManager::GetOrCreateGpuBlas) -- validation requires this usage
+    // flag be present on the buffer regardless of whether this particular
+    // instance ever actually gets used that way, same "cheap to always
+    // allow" reasoning as needsDeviceAddress above. Device address support
+    // alone (VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, set below) isn't
+    // sufficient -- Vulkan validates this as a separate, explicit usage bit.
+    if (needsDeviceAddress) usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 
     VkMemoryPropertyFlags memProps = desc.hostVisible
         ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
@@ -765,7 +778,13 @@ PipelineHandle VulkanDevice::CreateRayTracingPipeline(const RayTracingPipelineDe
     addrInfo.buffer = native.sbtBuffer.buffer;
     VkDeviceAddress sbtAddress = vkGetBufferDeviceAddressKHR_(m_device, &addrInfo);
 
-    native.raygenRegion = { sbtAddress, handleSizeAligned, raygenRegionSize };
+    // Raygen region is special-cased: the spec requires its `size` equal
+    // its `stride` (exactly one raygen record per TraceRays call, no
+    // array of them) -- raygenRegionSize below is the *buffer space*
+    // reserved for this region (padded up to baseAlignment so the miss
+    // region that follows starts at a valid offset), which is NOT the
+    // same value and must not be reported as this region's `size`.
+    native.raygenRegion = { sbtAddress, handleSizeAligned, handleSizeAligned };
     native.missRegion = { sbtAddress + raygenRegionSize, handleSizeAligned, missRegionSize };
     native.hitRegion = { sbtAddress + raygenRegionSize + missRegionSize, handleSizeAligned, hitRegionSize };
 
@@ -864,9 +883,15 @@ BLASHandle VulkanDevice::CreateBLAS(const BLASBuildDesc& desc) {
         &buildInfo, primitiveCounts.data(), &sizeInfo);
 
     NativeAccelStruct native;
+    // needsDeviceAddress=true -- the AS backing buffer itself must be
+    // created with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT for
+    // vkGetAccelerationStructureDeviceAddressKHR to accept it; the storage
+    // usage bit alone (below) isn't sufficient, same distinction as
+    // CreateBuffer's needsDeviceAddress vs. the AS-build-input usage flag.
     native.backingBuffer = AllocateBuffer(sizeInfo.accelerationStructureSize,
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        /*needsDeviceAddress=*/true);
 
     VkAccelerationStructureCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR };
     createInfo.buffer = native.backingBuffer.buffer;
@@ -913,9 +938,11 @@ TLASHandle VulkanDevice::CreateTLAS(const TLASBuildDesc& desc) {
         &buildInfo, &instanceCount, &sizeInfo);
 
     NativeAccelStruct native;
+    // See CreateBLAS's comment on why needsDeviceAddress=true is required here.
     native.backingBuffer = AllocateBuffer(sizeInfo.accelerationStructureSize,
         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        /*needsDeviceAddress=*/true);
 
     VkAccelerationStructureCreateInfoKHR createInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR };
     createInfo.buffer = native.backingBuffer.buffer;
