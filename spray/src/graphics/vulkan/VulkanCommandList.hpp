@@ -35,6 +35,8 @@ public:
         size_t sizeBytes) override;
     void CopyBufferToTexture(BufferHandle src, TextureHandle dst, uint32_t mipLevel,
         uint32_t arrayLayer) override;
+    void CopyTextureToBuffer(TextureHandle src, uint32_t mipLevel, uint32_t arrayLayer,
+        BufferHandle dst, size_t dstOffset) override;
 
     void BuildBLAS(BLASHandle handle, const BLASBuildDesc& desc) override;
     void BuildTLAS(TLASHandle handle, const TLASBuildDesc& desc) override;

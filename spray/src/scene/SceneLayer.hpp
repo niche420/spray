@@ -18,6 +18,10 @@ namespace spray::graphics {
 class ICommandList;
 }
 
+namespace spray::ui {
+class UIManager;
+}
+
 namespace spray {
 
 // Owns the loaded Scene, its asset layer, its set of switchable viewports
@@ -35,6 +39,16 @@ namespace spray {
 // separate hardcoded entry points. A future SplatViewer slots in the same
 // way, as ViewportMode::Splat, without needing any changes here beyond
 // constructing one and adding it to GetActiveViewport's switch.
+//
+// The active viewport is displayed as a docked ImGui::Image panel (see
+// DrawViewportPanel) rather than a fullscreen blit -- needs a UIManager
+// reference to turn a TextureHandle into an ImTextureID, wired in via
+// SetUIManager after both are constructed (see App::App).
+//
+// GetPathTracer/GetActiveCameraEntity exist for CaptureLayer, a sibling
+// Layer that drives the same PathTracer instance offline to produce a
+// dataset -- see CaptureLayer's class comment for why it reaches in here
+// rather than owning its own PathTracer.
 class SceneLayer : public Layer {
 public:
     SceneLayer(graphics::IDevice& device);
@@ -58,16 +72,35 @@ public:
     void SetViewportMode(graphics::ViewportMode mode) { m_activeMode = mode; }
     graphics::ViewportMode GetViewportMode() const { return m_activeMode; }
 
-    // The currently active viewport's rendered output -- what App should
-    // hand to Presenter::Blit this frame.
+    // The currently active viewport's rendered output -- what the docked
+    // viewport panel displays this frame (see DrawViewportPanel).
     graphics::TextureHandle GetActiveColorOutput() const;
 
-    // Needed by App to construct its Presenter (see App.cpp) against the
-    // same shared cache Rasterizer/PathTracer already load through.
+    // Needed by App/Presenter-adjacent code to load through the same
+    // shared cache Rasterizer/PathTracer already use.
     graphics::shaders::ShaderLibrary& GetShaderLibrary() { return *m_pShaderLibrary; }
 
     assets::AssetManager& GetAssetManager() { return *m_pAssets; }
     Scene& GetScene() { return *m_pScene; }
+
+    // The shared PathTracer instance -- see class comment on why
+    // CaptureLayer drives this one directly instead of owning its own.
+    graphics::PathTracer& GetPathTracer() { return *m_pPathTracer; }
+
+    // The entity currently driving the interactive viewport's camera, or
+    // entt::null if none. CaptureLayer reads this to copy FOV/near/far for
+    // its own temporary capture camera.
+    entt::entity GetActiveCameraEntity() const { return m_activeCamera; }
+
+    // Wired in by App after both SceneLayer and UIManager exist -- needed
+    // by DrawViewportPanel to turn the active viewport's TextureHandle
+    // into an ImTextureID for ImGui::Image.
+    void SetUIManager(ui::UIManager& ui) { m_pUI = &ui; }
+
+    // The size (in pixels) the docked "Viewport" ImGui panel last reported
+    // via DrawViewportPanel -- what App::RenderFrame sizes the active
+    // viewport's render to next frame.
+    glm::uvec2 GetViewportPanelSize() const { return m_viewportPanelSize; }
 
 private:
     // Shared by the content browser's "Load" button and the
@@ -80,6 +113,7 @@ private:
 
     graphics::IViewport& GetActiveViewport();
 
+    void DrawViewportPanel();
     void DrawOutlinerPanel();
     void DrawInspectorPanel();
     void DrawContentBrowserPanel();
@@ -94,7 +128,17 @@ private:
     std::unique_ptr<graphics::PathTracer> m_pPathTracer;
     graphics::ViewportMode m_activeMode = graphics::ViewportMode::Rasterized;
 
+    ui::UIManager* m_pUI = nullptr; // non-owning, see SetUIManager
+    glm::uvec2 m_viewportPanelSize{ 1280, 720 };
+
     entt::entity m_activeCamera = entt::null;
+
+    // Mouse-look state for the fly camera (see OnUpdate) -- tracked as
+    // separate yaw/pitch angles and re-applied to Transform::rotation
+    // fresh every frame, rather than accumulated via repeated quaternion
+    // multiplication (which drifts/rolls over time).
+    float m_cameraYaw = 0.0f;
+    float m_cameraPitch = 0.0f;
 
     // UI-only state -- deliberately not stored on Scene, since "what's
     // selected in the editor" isn't simulation state.

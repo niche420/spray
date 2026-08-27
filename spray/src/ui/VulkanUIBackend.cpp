@@ -15,6 +15,7 @@
 namespace spray::ui::vk {
 
 VulkanUIBackend::VulkanUIBackend(graphics::vk::VulkanDevice& device, Swapchain& swapchain)
+    : m_device(device)
 {
     ImGui_ImplVulkan_InitInfo initInfo{};
     initInfo.Instance = device.GetInstance();
@@ -42,9 +43,23 @@ VulkanUIBackend::VulkanUIBackend(graphics::vk::VulkanDevice& device, Swapchain& 
     initInfo.UseDynamicRendering = true;
 
     ImGui_ImplVulkan_Init(&initInfo);
+
+    // Owned directly rather than through IDevice::CreateSampler -- purely a
+    // UI-display concern (see header comment), unrelated to any renderer's
+    // own sampler set.
+    VkSamplerCreateInfo samplerInfo{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+    vkCreateSampler(device.GetDevice(), &samplerInfo, nullptr, &m_sampler);
 }
 
 VulkanUIBackend::~VulkanUIBackend() {
+    if (m_cachedDescriptorSet) ImGui_ImplVulkan_RemoveTexture(m_cachedDescriptorSet);
+    if (m_sampler) vkDestroySampler(m_device.GetDevice(), m_sampler, nullptr);
     ImGui_ImplVulkan_Shutdown();
 }
 
@@ -55,6 +70,20 @@ void VulkanUIBackend::BeginFrame() {
 void VulkanUIBackend::Render(graphics::ICommandList& cmd) {
     auto& vkCmd = static_cast<graphics::vk::VulkanCommandList&>(cmd);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vkCmd.GetCommandBuffer());
+}
+
+ImTextureID VulkanUIBackend::GetTextureID(graphics::TextureHandle texture) {
+    if (texture != m_cachedTexture) {
+        if (m_cachedDescriptorSet) {
+            ImGui_ImplVulkan_RemoveTexture(m_cachedDescriptorSet);
+            m_cachedDescriptorSet = VK_NULL_HANDLE;
+        }
+        graphics::vk::NativeTexture& tex = m_device.GetNativeTexture(texture);
+        m_cachedDescriptorSet = ImGui_ImplVulkan_AddTexture(m_sampler, tex.view,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        m_cachedTexture = texture;
+    }
+    return reinterpret_cast<ImTextureID>(m_cachedDescriptorSet);
 }
 
 } // namespace spray::ui::vk

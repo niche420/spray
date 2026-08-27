@@ -206,6 +206,20 @@ void VulkanCommandList::CopyBufferToTexture(BufferHandle src, TextureHandle dst,
     vkCmdCopyBufferToImage(m_cmdBuffer, s.buffer, d.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
+void VulkanCommandList::CopyTextureToBuffer(TextureHandle src, uint32_t mipLevel, uint32_t arrayLayer,
+    BufferHandle dst, size_t dstOffset) {
+    NativeTexture& s = m_device->GetNativeTexture(src);
+    NativeBuffer& d = m_device->GetNativeBuffer(dst);
+
+    // Caller must have transitioned src to CopySrc beforehand -- same
+    // convention as CopyBufferToTexture's dst/CopyDst requirement.
+    VkBufferImageCopy region{};
+    region.bufferOffset = dstOffset;
+    region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, mipLevel, arrayLayer, 1 };
+    region.imageExtent = { std::max(1u, s.width >> mipLevel), std::max(1u, s.height >> mipLevel), 1 };
+    vkCmdCopyImageToBuffer(m_cmdBuffer, s.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d.buffer, 1, &region);
+}
+
 // ============================================================================
 // Ray tracing
 // ============================================================================

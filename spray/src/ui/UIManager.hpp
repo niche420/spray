@@ -37,6 +37,11 @@ public:
     // EndRendering scope.
     void Render(graphics::ICommandList& cmd);
 
+    // Passthrough to the active backend -- see UIBackend::GetTextureID.
+    // Used by SceneLayer's docked viewport panel to display an IViewport's
+    // color output via ImGui::Image.
+    ImTextureID GetTextureID(graphics::TextureHandle texture) { return m_backend->GetTextureID(texture); }
+
 private:
     ImGuiContext* m_ctx;
     std::unique_ptr<UIBackend> m_backend;

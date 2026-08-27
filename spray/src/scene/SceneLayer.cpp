@@ -4,12 +4,14 @@
 #include "asset/GltfImporter.hpp"
 #include "event/Input.hpp"
 #include "graphics/CommandList.hpp"
+#include "ui/UIManager.hpp"
 
 #include <imgui.h>
 
 #include <glm/gtc/quaternion.hpp>
 
 #include <SDL3/SDL_scancode.h>
+#include <SDL3/SDL_mouse.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -58,10 +60,8 @@ void SceneLayer::OnAttach() {
     m_pRasterizer = std::make_unique<graphics::Rasterizer>(m_device, *m_pAssets, *m_pShaderLibrary);
     m_pPathTracer = std::make_unique<graphics::PathTracer>(m_device, *m_pAssets, *m_pShaderLibrary);
 
-    // Placeholder camera until a real orbit/fly controller with mouse-look
-    // exists (Input::ConsumeMouseDelta is there for it) -- WASD/QE
-    // movement below is enough to not be a fixed screenshot in the
-    // meantime.
+    // Placeholder camera until a real orbit controller exists -- WASD/QE
+    // movement plus right-drag mouse-look (see OnUpdate) is enough for now.
     m_activeCamera = m_pScene->CreateEntity("MainCamera");
     auto& registry = m_pScene->GetRegistry();
     registry.emplace<Camera>(m_activeCamera).isPrimary = true;
@@ -80,6 +80,26 @@ void SceneLayer::LoadScene(const std::string& path) {
 void SceneLayer::OnUpdate(float deltaSeconds) {
     if (m_activeCamera != entt::null) {
         Transform& camXf = m_pScene->GetRegistry().get<Transform>(m_activeCamera);
+
+        // Mouse-look while the right button is held (standard fly-camera
+        // convention). Yaw/pitch are tracked separately and re-applied to
+        // the quaternion fresh every frame rather than accumulating via
+        // repeated quaternion multiplication, which drifts (roll creeps
+        // in) in a way re-deriving from stored angles can't.
+        if (Input::IsMouseButtonDown(SDL_BUTTON_RIGHT)) {
+            glm::vec2 delta = Input::ConsumeMouseDelta();
+            constexpr float kSensitivity = 0.0025f;
+            m_cameraYaw -= delta.x * kSensitivity;
+            m_cameraPitch -= delta.y * kSensitivity;
+            const float kMaxPitch = glm::radians(89.0f);
+            m_cameraPitch = glm::clamp(m_cameraPitch, -kMaxPitch, kMaxPitch);
+        } else {
+            // Drain accumulated motion so releasing/re-pressing the button
+            // doesn't apply a jump from movement that happened while up.
+            Input::ConsumeMouseDelta();
+        }
+        camXf.rotation = glm::quat(glm::vec3(m_cameraPitch, m_cameraYaw, 0.0f));
+
         glm::vec3 forward = camXf.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
         glm::vec3 right = camXf.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
         float speed = 3.0f * deltaSeconds;
@@ -139,16 +159,46 @@ graphics::TextureHandle SceneLayer::GetActiveColorOutput() const {
 }
 
 void SceneLayer::OnImGuiRender() {
+    DrawViewportPanel();
     DrawViewportModePanel();
     DrawOutlinerPanel();
     DrawInspectorPanel();
     DrawContentBrowserPanel();
 }
 
+void SceneLayer::DrawViewportPanel() {
+    // Zero padding so the image fills the panel edge-to-edge rather than
+    // sitting inset inside ImGui's default window padding.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("Viewport");
+
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    // Floor at 1x1 -- a fully collapsed/zero-area panel would otherwise
+    // feed a 0-sized request down to SetOutputSize (PathTracer divides by
+    // height for aspect ratio; a literal 0 there is a crash, not a no-op).
+    m_viewportPanelSize = {
+        static_cast<uint32_t>(avail.x > 1.0f ? avail.x : 1.0f),
+        static_cast<uint32_t>(avail.y > 1.0f ? avail.y : 1.0f),
+    };
+
+    // One frame of latency: this displays whatever RenderActiveViewport
+    // rendered last frame at last frame's panel size, and the size read
+    // above is what this frame's App::RenderFrame will render at for next
+    // frame's display. Standard for a docked-image viewport -- imperceptible
+    // in practice, and far simpler than resizing/re-rendering mid-ImGui-pass.
+    graphics::TextureHandle output = GetActiveColorOutput();
+    if (output.IsValid() && m_pUI) {
+        ImGui::Image(m_pUI->GetTextureID(output), avail);
+    }
+
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
 void SceneLayer::DrawViewportModePanel() {
     ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(220, 90), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Viewport");
+    ImGui::Begin("Viewport Settings");
 
     // Splat deliberately omitted -- no implementation yet, see
     // GetActiveViewport's comment. Add it here once SplatViewer exists.
@@ -296,10 +346,9 @@ void SceneLayer::DrawContentBrowserPanel() {
         ImGui::TextDisabled("%s", m_pScene->sourcePath.string().c_str());
     }
 
-    // NOTE: captured datasets and training jobs will get their own Layer
-    // (see the project's architecture discussion -- a "CaptureLayer"
-    // sibling to this one) rather than living here. This panel currently
-    // only exercises "load a scene".
+    // NOTE: captured datasets and training jobs get their own Layer
+    // (see CaptureLayer, a sibling of this one) rather than living here.
+    // This panel only exercises "load a scene".
     ImGui::Separator();
     ImGui::InputText("glTF path", m_loadPathBuffer, sizeof(m_loadPathBuffer));
     ImGui::SameLine();

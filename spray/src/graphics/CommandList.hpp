@@ -73,6 +73,15 @@ public:
     // face ordering); for a Texture2DArray it selects the array slice.
     virtual void CopyBufferToTexture(BufferHandle src, TextureHandle dst, uint32_t mipLevel,
         uint32_t arrayLayer) = 0;
+
+    // mipLevel/arrayLayer select which subresource of src to copy from --
+    // same semantics as CopyBufferToTexture's. Writes tightly-packed rows
+    // (width * bytesPerPixel, no padding) starting at dstOffset -- caller
+    // must size dst accordingly. src must already be in ResourceState::
+    // CopySrc; caller transitions it there beforehand, same convention as
+    // every other command here not issuing its own barriers.
+    virtual void CopyTextureToBuffer(TextureHandle src, uint32_t mipLevel, uint32_t arrayLayer,
+        BufferHandle dst, size_t dstOffset) = 0;
 };
 
 } // namespace spray::graphics

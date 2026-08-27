@@ -8,6 +8,8 @@ set(SRC
     src/Swapchain.hpp
     src/Window.hpp
     src/Window.cpp
+    src/capture/CaptureLayer.cpp
+    src/capture/CaptureLayer.hpp
     src/event/Events.hpp
     src/event/Input.cpp
     src/event/Input.hpp
@@ -31,6 +33,8 @@ set(SRC
     src/graphics/Presenter.hpp
     src/graphics/Rasterizer.cpp
     src/graphics/Rasterizer.hpp
+    src/graphics/TextureReadback.cpp
+    src/graphics/TextureReadback.hpp
     src/graphics/Viewport.hpp
     src/graphics/shaders/ShaderLibrary.cpp
     src/graphics/shaders/ShaderLibrary.hpp
@@ -235,6 +239,9 @@ spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Mesh.hlsl PSMain ps
 # Presenter's fullscreen blit pass -- HLSL like Mesh.hlsl (needs to run on
 # both backends, and there's no GLSL-vs-HLSL benefit to a shader this
 # trivial the way there was for the ray tracing extension shaders below).
+# Presenter itself is currently unused by App (the active viewport is now
+# displayed via a docked ImGui::Image -- see SceneLayer::DrawViewportPanel)
+# but kept buildable as a general-purpose utility.
 spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Blit.hlsl VSMain vs_6_0 blit.vs)
 spray_compile_hlsl(${CMAKE_CURRENT_SOURCE_DIR}/shaders/d3d12/Blit.hlsl PSMain ps_6_0 blit.ps)
 
